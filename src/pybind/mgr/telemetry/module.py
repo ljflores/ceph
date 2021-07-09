@@ -429,6 +429,8 @@ class Module(MgrModule):
             fs_map = self.get('fs_map')
             df = self.get('df')
 
+            report['perf_histograms'] = self.get_all_perf_histograms()
+
             report['created'] = mon_map['created']
 
             # mons

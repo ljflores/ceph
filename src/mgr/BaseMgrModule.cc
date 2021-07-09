@@ -668,6 +668,19 @@ get_perf_schema(BaseMgrModule *self, PyObject *args)
   return self->py_modules->get_perf_schema_python(type_str, svc_id);
 }
 
+static PyObject* 
+get_perf_histograms(BaseMgrModule *self, PyObject *args)
+{
+  char *type_str = nullptr;
+  char *svc_id = nullptr;
+  if (!PyArg_ParseTuple(args, "ss:get_perf_histograms", &type_str,
+						        &svc_id)) {
+    return nullptr;
+  }
+
+  return self->py_modules->get_perf_histograms_python(type_str, svc_id);
+}
+
 static PyObject *
 ceph_get_osdmap(BaseMgrModule *self, PyObject *args)
 {
@@ -1445,6 +1458,9 @@ PyMethodDef BaseMgrModule_methods[] = {
 
   {"_ceph_get_perf_schema", (PyCFunction)get_perf_schema, METH_VARARGS,
     "Get the performance counter schema"},
+
+  {"_ceph_get_perf_histograms", (PyCFunction)get_perf_histograms, METH_VARARGS,
+    "Get the performance histogram schema"},
 
   {"_ceph_log", (PyCFunction)ceph_log, METH_VARARGS,
    "Emit a (local) log message"},

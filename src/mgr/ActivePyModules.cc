@@ -959,6 +959,59 @@ PyObject* ActivePyModules::get_perf_schema_python(
   return f.get();
 }
 
+PyObject* ActivePyModules::get_perf_histograms_python(
+    const std::string &svc_type,
+    const std::string &svc_id)
+{
+  without_gil_t no_gil;
+  std::lock_guard l(lock);
+
+  DaemonStateCollection daemons;
+
+  if (svc_type == "") {
+    daemons = daemon_state.get_all();
+  } else if (svc_id.empty()) {
+    daemons = daemon_state.get_by_service(svc_type);
+  } else {
+    auto key = DaemonKey{svc_type, svc_id};
+    // so that the below can be a loop in all cases
+    auto got = daemon_state.get(key);
+    if (got != nullptr) {
+      daemons[key] = got;
+    }
+  }
+
+  auto f = with_gil(no_gil, [&] {
+    return PyFormatter();
+  });
+  if (!daemons.empty()) {
+    for (auto& [key, state] : daemons) {
+      std::lock_guard l(state->lock);
+      with_gil(no_gil, [&, key=ceph::to_string(key), state=state] {
+        f.open_object_section(key.c_str());
+        for (auto ctr_inst_iter : state->perf_counters.instances) {
+          const auto &counter_name = ctr_inst_iter.first;
+          f.open_object_section(counter_name.c_str());
+          auto type = state->perf_counters.types[counter_name];
+          f.dump_string("description", type.description);
+          if (!type.nick.empty()) {
+            f.dump_string("nick", type.nick);
+          }
+          f.dump_unsigned("type", type.type);
+          f.dump_unsigned("priority", type.priority);
+          f.dump_unsigned("units", type.unit);
+          f.close_section();
+        }
+        f.close_section();
+      });
+    }
+  } else {
+    dout(4) << __func__ << ": No daemon state found for "
+              << svc_type << "." << svc_id << ")" << dendl;
+  }
+  return f.get();
+}
+
 PyObject *ActivePyModules::get_context()
 {
   auto l = without_gil([&] {
