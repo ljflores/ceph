@@ -208,6 +208,19 @@ class Module(MgrModule):
 
         return metadata
 
+    def osd_network_dump(self) -> Dict[str, dict]:
+        # https://docs.ceph.com/en/latest/releases/mimic/?#id4
+        cmd_dict = {
+                'prefix': 'dump_osd_network',
+                'id': '0',
+                'value': 0,
+                'format': 'json'
+        }
+
+        r, outb, outs = self.osd_command(cmd_dict)
+        dump = json.loads(outb)
+        return dump
+
     def gather_mon_metadata(self,
                             mon_map: Dict[str, List[Dict[str, str]]]) -> Dict[str, Dict[str, int]]:
         keys = list()
@@ -731,6 +744,7 @@ class Module(MgrModule):
 
         if 'perf' in channels:
             report['perf_counters'] = self.gather_perf_counters()
+            report['osd_network_dump'] = self.osd_network_dump()
 
         # NOTE: We do not include the 'device' channel in this report; it is
         # sent to a different endpoint.
