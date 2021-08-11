@@ -889,6 +889,24 @@ Device report is generated separately. To see it run 'ceph telemetry show-device
         if 'report_id' not in report:
             raise RuntimeError('report_id not found in report')
 
+        # Tests for the perf channel
+        cmd_dict_1 = {
+                'prefix': 'osd pool create',
+                'pool': 'foo',
+                'pg_num': 100
+        }
+        cmd_dict_2 = {
+                'prefix': 'osd pool delete',
+                'pool': 'foo',
+                'pool2': 'foo',
+                'yes_i_really_really_mean_it': True 
+        }
+        r, outb, outs = self.mon_command(cmd_dict_1)
+        r, outb, outs = self.mon_command(cmd_dict_2)
+
+        if r != 0:
+            raise RuntimeError('{}'.format(outs))
+
     def shutdown(self) -> None:
         self.run = False
         self.event.set()
