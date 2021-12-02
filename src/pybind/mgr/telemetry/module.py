@@ -338,6 +338,74 @@ class Module(MgrModule):
 
         return result
 
+    def get_rocksdb_stats(self, mode: str = 'separated') -> Dict[str, dict]:
+        result: Dict[str, dict] = defaultdict()
+
+        if mode == 'aggregated':
+            num_combined_osds = 0
+            main: Dict[str, dict] = defaultdict(int)
+            histogram: Dict[str, dict] = defaultdict(lambda: defaultdict(int))
+            columns: Dict[str, dict] = defaultdict(lambda: defaultdict(
+                                                   lambda: defaultdict(int)))
+
+        osd_metadata = self.get('osd_metadata')
+
+        for osd_id in osd_metadata:
+            cmd_dict = {
+                'prefix': 'dump_rocksdb_stats',
+                'id': str(osd_id),
+                'level': 'telemetry',
+                'format': 'json'
+            }
+            r, outb, outs = self.osd_command(cmd_dict)
+            if r != 0:
+                self.log.debug("Invalid command dictionary: {}".format(cmd_dict))
+                return {}
+            try:
+                dump = json.loads(outb)
+                if mode == 'separated':
+                    result["osd." + str(osd_id)] = dump
+
+                elif mode == 'aggregated':
+                    for metric in dump['main']:
+                        main[metric] += dump['main'][metric]
+
+                    for metric in dump['histogram']:
+                        for value in dump['histogram'][metric]:
+                            histogram[metric][value] += dump['histogram'][metric][value]
+
+                    for metric in dump['columns']['all_columns']['sum']:
+                        columns['all_columns']['sum'][metric] += \
+                                dump['columns']['all_columns']['sum'][metric]
+
+                    if 'total_slowdown' not in columns['all_columns']:
+                        columns['all_columns']['total_slowdown'] = \
+                                dump['columns']['all_columns']['total_slowdown']
+                    else:
+                        columns['all_columns']['total_slowdown'] += \
+                                dump['columns']['all_columns']['total_slowdown']
+
+                    if 'total_stop' not in columns['all_columns']:
+                        columns['all_columns']['total_stop'] = \
+                                dump['columns']['all_columns']['total_stop']
+                    else:
+                        columns['all_columns']['total_stop'] += \
+                                dump['columns']['all_columns']['total_stop']
+
+                    num_combined_osds += 1
+
+            except json.decoder.JSONDecodeError:
+                self.log.debug("Error caught: {}".format(e))
+                return {}
+
+        if mode == 'aggregated':
+            result['main'] = main
+            result['histogram'] = histogram
+            result['columns'] = columns
+            result['num_combined_osds'] = num_combined_osds
+
+        return result
+
     def get_osd_histograms(self, mode: str = 'separated') -> List[Dict[str, dict]]:
         # Initialize result dict
         result: Dict[str, dict] = defaultdict(lambda: defaultdict(
@@ -913,6 +981,8 @@ class Module(MgrModule):
 
             report['mempool_aggregated'] = self.get_mempool('aggregated')
             report['mempool_separated'] = self.get_mempool('separated')
+
+            report['rocksdb_stats'] = self.get_rocksdb_stats()
 
         # NOTE: We do not include the 'device' channel in this report; it is
         # sent to a different endpoint.
