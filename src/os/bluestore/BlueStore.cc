@@ -5091,6 +5091,12 @@ void BlueStore::_init_logger()
 		    PerfCountersBuilder::PRIO_DEBUGONLY,
 		    unit_t(UNIT_BYTES));
 
+  b.add_u64_counter(l_bluestore_zero_block_count_big,
+      "zero_block_count_big",
+      "Sum of big zero blocks skipped");
+  b.add_u64_counter(l_bluestore_zero_block_bytes_big,
+      "zero_block_bytes_big",
+      "Total bytes of big zero blocks skipped");
   b.add_u64_counter(l_bluestore_zero_block_count_small,
       "zero_block_count_small",
       "Sum of small zero blocks skipped");
@@ -14967,14 +14973,29 @@ void BlueStore::_do_write_big(
     }
     bufferlist t;
     blp.copy(l, t);
-    wctx->write(offset, b, l, b_off, t, b_off, l, false, new_blob);
-    dout(20) << __func__ << " schedule write big: 0x"
+
+    // Zero detection -- big block
+    if (!t.is_zero()) {
+      wctx->write(offset, b, l, b_off, t, b_off, l, false, new_blob);
+
+      dout(20) << __func__ << " schedule write big: 0x"
       << std::hex << offset << "~" << l << std::dec
       << (new_blob ? " new " : " reuse ")
       << *b << dendl;
+
+      logger->inc(l_bluestore_write_big_blobs);
+    } else { // if (!t.is_zero())
+      dout(20) << __func__ << " skip big zero block "
+        << *b << std::hex
+        << " (0x" << o << "~" << t.length() << ")"
+        << " (0x" << b_off << "~" << l << ")"
+        << std::dec << dendl;
+      logger->inc(l_bluestore_zero_block_count_big);
+      logger->inc(l_bluestore_zero_block_bytes_big, l);
+    }
+
     offset += l;
     length -= l;
-    logger->inc(l_bluestore_write_big_blobs);
   }
 }
 

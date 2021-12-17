@@ -142,6 +142,8 @@ enum {
   l_bluestore_submitted_deferred_writes,
   l_bluestore_submitted_deferred_write_bytes,
 
+  l_bluestore_zero_block_count_big,
+  l_bluestore_zero_block_bytes_big,
   l_bluestore_zero_block_count_small,
   l_bluestore_zero_block_bytes_small,
   //****************************************
