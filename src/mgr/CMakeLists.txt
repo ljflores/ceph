@@ -36,6 +36,7 @@ if(WITH_MGR)
   if(WITH_LIBCEPHSQLITE)
     target_link_libraries(ceph-mgr cephsqlite SQLite3::SQLite3)
   endif()
+  target_include_directories(ceph-mgr PRIVATE "${CMAKE_SOURCE_DIR}/src/rocksdb/include")
   target_link_libraries(ceph-mgr
     osdc client heap_profiler
     global-static ceph-common
