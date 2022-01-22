@@ -28,6 +28,15 @@ if [[ ! -b "${SCRATCH_DEV}" ]]; then
     SCRATCH_DEV="/dev/sdc"
 fi
 
+TEST_DEV="/dev/vdb"
+if [[ ! -b "${TEST_DEV}" ]]; then
+    TEST_DEV="/dev/sdb"
+fi
+SCRATCH_DEV="/dev/vdc"
+if [[ ! -b "${SCRATCH_DEV}" ]]; then
+    SCRATCH_DEV="/dev/sdc"
+fi
+
 # tests excluded fail in the current testing vm regardless of whether
 # rbd is used
 
