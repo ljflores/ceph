@@ -201,7 +201,7 @@ class TestModuleSelftest(MgrTestCase):
         self.mgr_cluster.mon_manager.raw_cluster_cmd(
             "mgr", "module", "disable", "selftest")
 
-        self.wait_for_health_clear(timeout=30)
+        self.wait_for_health_clear(timeout=60)
 
     def test_module_remote(self):
         """
