@@ -4808,6 +4808,187 @@ bool OSDMap::try_pg_upmap(
   return true;
 }
 
+
+int OSDMap::calc_workload_balancer(
+  CephContext *cct,
+  int64_t pid,
+  OSDMap::Incremental *pending_inc,
+  OSDMap& tmp_osd_map)
+{
+  // Info to be used in verify_upmap
+  const pg_pool_t* pool = get_pg_pool(pid);
+  int pool_size = pool->get_size();
+  int crush_rule = pool->get_crush_rule();
+
+  // Get pgs by osd (map of osd -> pgs)
+  // Get primaries by osd (map of osd -> primary)
+  map<uint64_t,set<pg_t>> pgs_by_osd;
+  map<uint64_t,set<pg_t>> prim_pgs_by_osd;
+  map<uint64_t,set<pg_t>> acting_prims_by_osd;
+  pgs_by_osd = tmp_osd_map.get_pgs_by_osd(cct, pid, &prim_pgs_by_osd, &acting_prims_by_osd);
+
+  // Transfer pgs into a map, `pgs_to_check`. This will tell us the total num_changes after all
+  //     calculations have been finalized.
+  // Transfer osds into a set, `osds_to_check`.
+  // This is to avoid poor runtime when we loop through the pgs and to set up
+  // our call to calc_desired_primary_distribution.
+  map<pg_t,bool> prim_pgs_to_check;
+  vector<uint64_t> osds_to_check;
+  for (auto [osd, pgs] : acting_prims_by_osd) {
+    osds_to_check.push_back(osd);
+    for (auto pg : pgs) {
+      prim_pgs_to_check.insert({pg, false});
+    }
+  }
+
+  // calculate desired primary distribution for each osd
+  map<uint64_t,float> desired_prim_dist = calc_desired_primary_distribution(cct, pid, osds_to_check);
+
+  map<uint64_t,float> prim_dist_scores;
+  float actual;
+  float desired;
+  for (auto osd : osds_to_check) {
+    actual = acting_prims_by_osd[osd].size(); // TODO: eventually change this to prim_pgs_per_pg; acting is just for testing.
+    desired = desired_prim_dist[osd];
+    prim_dist_scores[osd] = actual - desired;
+    ldout(cct, 10) << __func__ << " desired distribution for osd." << osd << " " << desired << dendl;
+  }
+
+  //-------------- TODO: remove after testing; this is just here for debugging. -------------------
+  ldout(cct, 10) << " " << dendl;
+  ldout(cct, 10) << "---------- BEFORE ------------ " << dendl;
+  for (auto [osd, pgs] : acting_prims_by_osd) {
+    ldout(cct, 10) << __func__ << " osd." << osd << " ~ prims: " << pgs.size()
+                   << " ~ prim_dist_score: " << prim_dist_scores[osd]
+                   << " ~ primary affinity: " << get_primary_affinityf(osd) << dendl;
+  }
+  ldout(cct, 10) << " " << dendl;
+  //------------------------------------------------------------------------------------------------
+
+  // get ready to swap pgs
+  while (true) {
+    int curr_num_changes = 0;
+    vector<int> up_osds;
+    vector<int> acting_osds;
+    int up_primary, acting_primary;
+    for (auto [pg, mapped] : prim_pgs_to_check) {
+      // fill in the up, up primary, acting, and acting primary for the current PG
+      tmp_osd_map.pg_to_up_acting_osds(pg, &up_osds, &up_primary,
+	  &acting_osds, &acting_primary);
+      // TODO: we are using the acting primary right now for testing, but eventually we will want the up primary.
+      
+      // find the OSD that would make the best swap based on its score
+      // We start by first testing the OSD that is currently primary for the PG we are checking.
+      uint64_t curr_best_osd = acting_primary;
+      float prim_score = prim_dist_scores[acting_primary];
+      for (auto potential_osd : acting_osds) {
+	float potential_score = prim_dist_scores[potential_osd];
+	if ((prim_score > 0) && // taking 1 pg from the prim would not make its score worse
+	    (potential_score < 0) && // adding 1 pg to the potential would not make its score worse
+	    ((prim_score - potential_score) > 1) && // swapping a pg would not just keep the scores the same
+	    (desired_prim_dist[potential_osd] > 0)) // the potential is not off limits (the primary affinity is above 0)
+	{
+	  curr_best_osd = potential_osd;
+	}
+      }
+
+      // Make the swap only if:
+      //    1. The swap is legal
+      //    2. The balancer has chosen a new primary
+      auto legal_swap = crush->verify_upmap(cct,
+                                 crush_rule,
+                                 pool_size,
+                                 {(int)curr_best_osd});
+      if (legal_swap >= 0 &&
+	  ((int)curr_best_osd != acting_primary)) {
+	// Update prim_dist_scores
+	prim_dist_scores[curr_best_osd] += 1;
+	prim_dist_scores[acting_primary] -= 1;
+
+	// Update the mappings
+	pending_inc->new_primary_temp[pg] = curr_best_osd; // update the mapping
+	(*tmp_osd_map.primary_temp)[pg] = curr_best_osd; // TODO: for testing; changing it on the temporary osd map to later print the distributions
+	prim_pgs_to_check[pg] = true;
+
+	curr_num_changes++;
+      }
+      ldout(cct, 20) << __func__ << " curr_num_changes: " << curr_num_changes << dendl;
+    }
+    // If there are no changes after one pass through the pgs, then no further optimizations can be made.
+    if (curr_num_changes == 0) {
+      ldout(cct, 20) << __func__ << " curr_num_changes is 0; no further optimizations can be made." << dendl;
+      break;
+    }
+  }
+
+  //------------TODO: remove after testing; just here for now to show results.---------------------
+  map<uint64_t,set<pg_t>> pgs_by_osd_2;
+  map<uint64_t,set<pg_t>> prim_pgs_by_osd_2;
+  map<uint64_t,set<pg_t>> acting_prims_by_osd_2;
+  pgs_by_osd_2 = tmp_osd_map.get_pgs_by_osd(cct, pid, &prim_pgs_by_osd_2, &acting_prims_by_osd_2);
+  ldout(cct, 10) << " " << dendl;
+  ldout(cct, 10) << "---------- AFTER ------------ " << dendl;
+  for (auto [osd, pgs] : acting_prims_by_osd_2) {
+    ldout(cct, 10) << __func__ << " osd." << osd << " ~ prims: " << pgs.size()
+                   << " ~ prim_dist_score: " << prim_dist_scores[osd]
+                   << " ~ primary affinity: " << get_primary_affinityf(osd) << dendl;
+  }
+  ldout(cct, 10) << " " << dendl;
+  //-----------------------------------------------------------------------------------------------
+
+  // Tally total number of changes
+  int num_changes = 0;
+  for (auto [pg, mapped] : prim_pgs_to_check) {
+    if (mapped) {
+      num_changes++;
+    }
+  }
+
+  ldout(cct, 10) << __func__ << " num_changes " << num_changes << dendl;
+  return num_changes;
+}
+
+map<uint64_t,float> OSDMap::calc_desired_primary_distribution(
+  CephContext *cct,
+  int64_t pid,
+  const vector<uint64_t> &osds)
+{
+  map<uint64_t,float> desired_primary_distribution; // will return a perfect distribution of floats
+				                    // without calculating the floor of each value
+  // This function only handles replicated pools.
+  const pg_pool_t* pool = get_pg_pool(pid);
+  if (pool->is_replicated()) {
+    ldout(cct, 10) << __func__ << " calculating distribution for replicated pool "
+                   << get_pool_name(pid) << dendl;
+    uint64_t replica_count = pool->get_size();
+    
+    map<uint64_t,set<pg_t>> pgs_by_osd;
+    pgs_by_osd = get_pgs_by_osd(cct, pid);
+
+    // First calculate the distribution using primary affinity and tally up the sum
+    float distribution_sum = 0.0;
+    for (auto& osd : osds) {
+      float osd_primary_count = ((float)pgs_by_osd[osd].size() / (float)replica_count) * get_primary_affinityf(osd);
+      desired_primary_distribution.insert({osd, osd_primary_count});
+      distribution_sum += osd_primary_count;
+    }
+    // Then, stretch the value (necessary when primary affinity is smaller than 1)
+    float factor = (float)pool->get_pg_num() / (float)distribution_sum;
+    float distribution_sum_desired = 0.0;
+    ceph_assert(factor >= 1.0);
+    for (auto [osd, osd_primary_count] : desired_primary_distribution) {
+      desired_primary_distribution[osd] *= factor;
+      distribution_sum_desired += desired_primary_distribution[osd];
+    }
+    ceph_assert(fabs(distribution_sum_desired - pool->get_pg_num()) < 0.01);
+  } else {
+    ldout(cct, 10) << __func__ <<" skipping erasure pool "
+                   << get_pool_name(pid) << dendl;
+  }
+
+  return desired_primary_distribution;
+}
+
 int OSDMap::calc_pg_upmaps(
   CephContext *cct,
   uint32_t max_deviation,
