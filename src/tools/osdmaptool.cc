@@ -93,6 +93,9 @@ void print_inc_upmaps(const OSDMap::Incremental& pending_inc, int fd)
     }
     ss << std::endl;
   }
+  for (auto& i : pending_inc.new_primary_temp) {
+    ss << "ceph osd primary-temp " << i.first << " " << i.second << std::endl;
+  }
   string s = ss.str();
   int r = safe_write(fd, s.c_str(), s.size());
   if (r < 0) {
@@ -157,6 +160,8 @@ int main(int argc, const char **argv)
   std::set<std::string> upmap_pools;
   std::random_device::result_type upmap_seed;
   std::random_device::result_type *upmap_p_seed = nullptr;
+  bool workload = false;
+  std::string workload_pool;
 
   int64_t pg_num = -1;
   bool test_map_pgs_dump_all = false;
@@ -186,12 +191,16 @@ int main(int argc, const char **argv)
     } else if (ceph_argparse_witharg(args, i, &upmap_file, "--upmap", (char*)NULL)) {
       upmap_cleanup = true;
       upmap = true;
+    } else if (ceph_argparse_witharg(args, i, &upmap_file, "--workload", (char*)NULL)) {
+	workload = true;
     } else if (ceph_argparse_witharg(args, i, &upmap_max, err, "--upmap-max", (char*)NULL)) {
     } else if (ceph_argparse_witharg(args, i, &upmap_deviation, err, "--upmap-deviation", (char*)NULL)) {
     } else if (ceph_argparse_witharg(args, i, (int *)&upmap_seed, err, "--upmap-seed", (char*)NULL)) {
       upmap_p_seed = &upmap_seed;
     } else if (ceph_argparse_witharg(args, i, &val, "--upmap-pool", (char*)NULL)) {
       upmap_pools.insert(val);
+    } else if (ceph_argparse_witharg(args, i, &val, "--workload-pool", (char*)NULL)) {
+      workload_pool = val;
     } else if (ceph_argparse_witharg(args, i, &num_osd, err, "--createsimple", (char*)NULL)) {
       if (!err.str().empty()) {
 	cerr << err.str() << std::endl;
@@ -422,7 +431,7 @@ int main(int argc, const char **argv)
     OSDMap::clean_temps(g_ceph_context, osdmap, tmpmap, &pending_inc);
   }
   int upmap_fd = STDOUT_FILENO;
-  if (upmap || upmap_cleanup) {
+  if (upmap || upmap_cleanup || workload) {
     if (upmap_file != "-") {
       upmap_fd = ::open(upmap_file.c_str(), O_CREAT|O_WRONLY|O_TRUNC, 0644);
       if (upmap_fd < 0) {
@@ -442,6 +451,49 @@ int main(int argc, const char **argv)
       print_inc_upmaps(pending_inc, upmap_fd);
       r = osdmap.apply_incremental(pending_inc);
       ceph_assert(r == 0);
+    }
+  }
+  if (workload) {
+    int64_t pid = osdmap.lookup_pg_pool_name(workload_pool);
+    if (pid < 0) {
+      cerr << " pool " << workload_pool << " does not exist" << std::endl;
+      exit(1);
+    }
+
+    OSDMap tmp_osd_map;
+    tmp_osd_map.deepish_copy_from(osdmap);
+
+    // Get pgs by osd (map of osd -> pgs)
+    // Get primaries by osd (map of osd -> primary)
+    map<uint64_t,set<pg_t>> pgs_by_osd;
+    map<uint64_t,set<pg_t>> prim_pgs_by_osd;
+    map<uint64_t,set<pg_t>> acting_prims_by_osd;
+    pgs_by_osd = tmp_osd_map.get_pgs_by_osd(g_ceph_context, pid, &prim_pgs_by_osd, &acting_prims_by_osd);
+    cout << " \n";
+    cout << "---------- BEFORE ------------ \n";
+    for (auto [osd, pgs] : acting_prims_by_osd) {
+      cout << " osd." << osd << " ~ number of prims: " << pgs.size() << " ~ score: " << "<insert score here>\n";
+    }
+    cout << " \n";
+
+    OSDMap::Incremental pending_inc(osdmap.get_epoch()+1);
+    int num_changes = osdmap.calc_workload_balancer(g_ceph_context, pid, &pending_inc, tmp_osd_map);
+
+    map<uint64_t,set<pg_t>> pgs_by_osd_2;
+    map<uint64_t,set<pg_t>> prim_pgs_by_osd_2;
+    map<uint64_t,set<pg_t>> acting_prims_by_osd_2;
+    pgs_by_osd_2 = tmp_osd_map.get_pgs_by_osd(g_ceph_context, pid, &prim_pgs_by_osd_2, &acting_prims_by_osd_2);
+    cout << " \n";
+    cout << "---------- AFTER ------------ \n";
+    for (auto [osd, pgs] : acting_prims_by_osd_2) {
+      cout << " osd." << osd << " ~ number of prims: " << pgs.size() << " ~ score: " << "<insert score here>\n";
+    }
+    cout << " \n";
+    cout << "num changes: " << num_changes << "\n";
+    cout << " \n";
+
+    if (num_changes > 0) {
+      print_inc_upmaps(pending_inc, upmap_fd);
     }
   }
   if (upmap) {
@@ -798,7 +850,7 @@ skip_upmap:
       export_crush.empty() && import_crush.empty() && 
       test_map_pg.empty() && test_map_object.empty() &&
       !test_map_pgs && !test_map_pgs_dump && !test_map_pgs_dump_all &&
-      adjust_crush_weight.empty() && !upmap && !upmap_cleanup) {
+      adjust_crush_weight.empty() && !upmap && !upmap_cleanup && !workload) {
     cerr << me << ": no action specified?" << std::endl;
     usage();
   }
