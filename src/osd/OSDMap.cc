@@ -4773,13 +4773,17 @@ bool OSDMap::try_pg_upmap(
 
 map<uint64_t,float> OSDMap::calc_desired_primary_distribution(
     CephContext *cct,
+    //TODO - make osds a const reference (const vectoruint64_t> &osds)
     vector<uint64_t> *osds,
+    //TODO - I am not sure about this, but it seems it should be a const ref as well
     pg_pool_t *pool)
 {
   map<uint64_t,float> desired_primary_distribution; // will return a perfect distribution of floats
 				                    // without calculating the floor of each value
   // This function only handles replicated pools.
   if (pool->is_replicated()) {
+    //TODO: need a space in the beginning od the message (separating from the __func__ string)
+    //TODO: I wouls also add the pool name here
     ldout(cct, 10) << __func__ << "calculating distribution for replicated pool" << dendl;
     uint64_t replica_count = pool->get_size();
     map<uint64_t,set<pg_t>> pgs_by_osd = get_pgs_by_osd();
@@ -4790,17 +4794,22 @@ map<uint64_t,float> OSDMap::calc_desired_primary_distribution(
       desired_primary_distribution.insert({osd, osd_primary_count});
     }
     // Next, calculate sum of the distribution
+    //TODO: sum could be easily caplulated as part of the previous loop 
     float sum = 0.0;
     for (auto [osd, osd_primary_count] : desired_primary_distribution) {
       sum += osd_primary_count;
     }
     // Then, stretch the values
+    //TODO: factor is a constant value for all the OSDs now, no need to calc in the loop
+    //TODO: factor = osds->size() / sum
     float factor;
     for (auto [osd, osd_primary_count]: desired_primary_distribution) {
       factor = pgs_by_osd[osd].size() / sum;
       desired_primary_distribution[osd] *= factor;
     }
   } else {
+    //TODO: need a space in the beginning od the message (separating from the __func__ string)
+    //TODO: I wouls also add the pool name here
     ldout(cct, 10) << __func__ << "skipping erasure pool " << dendl;
   }
 
