@@ -1455,8 +1455,8 @@ public:
 
   std::map<uint64_t,float> calc_desired_primary_distribution(
     CephContext *cct,
-    std::vector<uint64_t> *osds, // vector of osd ids
-    pg_pool_t *pool); // a single pool
+    int64_t pid, // pool id
+    const std::vector<uint64_t> &osds); // vector of osd ids
 
   int calc_pg_upmaps(
     CephContext *cct,
