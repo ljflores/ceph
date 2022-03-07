@@ -194,12 +194,16 @@ class TestModuleSelftest(MgrTestCase):
         self.wait_for_health(
             "Module 'selftest' has failed: Synthetic exception in serve",
             timeout=30)
+        
+        # Disabling the module should be enough to clear the synthetic
+        # exception error.
+        self.mgr_cluster.mon_manager.raw_cluster_cmd(
+            "mgr", "module", "disable", "selftest")
+        
         # prune the crash reports, so that the health report is back to
         # clean
         self.mgr_cluster.mon_manager.raw_cluster_cmd(
             "crash", "prune", "0")
-        self.mgr_cluster.mon_manager.raw_cluster_cmd(
-            "mgr", "module", "disable", "selftest")
 
         self.wait_for_health_clear(timeout=30)
 
