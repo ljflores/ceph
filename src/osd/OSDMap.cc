@@ -4771,6 +4771,8 @@ bool OSDMap::try_pg_upmap(
   return true;
 }
 
+//TODO: some petty comments today, but they will appear in the code review. 
+//      The parameters of the function are intended by 4 instead of 2
 map<uint64_t,float> OSDMap::calc_desired_primary_distribution(
     CephContext *cct,
     int64_t pid,
@@ -4794,6 +4796,8 @@ map<uint64_t,float> OSDMap::calc_desired_primary_distribution(
     }
     // Then, stretch the values
     float factor = osds.size() / sum;
+//TODO: need a space befor the colon 
+//TODO: I wouls also assert here (before the loop) that facor <= 1 (just to make the code more readable)
     for (auto [osd, osd_primary_count]: desired_primary_distribution) {
       desired_primary_distribution[osd] *= factor;
     }
