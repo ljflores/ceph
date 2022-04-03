@@ -1453,6 +1453,10 @@ public:
     std::vector<int> *orig,
     std::vector<int> *out);             ///< resulting alternative mapping
 
+  void calc_workload_balancer(
+    CephContext *cct,
+    int64_t pid);
+  
   std::map<uint64_t,float> calc_desired_primary_distribution(
     CephContext *cct,
     int64_t pid, // pool id

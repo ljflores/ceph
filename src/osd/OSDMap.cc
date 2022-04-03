@@ -4771,6 +4771,43 @@ bool OSDMap::try_pg_upmap(
   return true;
 }
 
+void OSDMap::calc_workload_balancer(
+  CephContext *cct,
+  int64_t pid)
+{
+  OSDMap tmp_osd_map;
+  tmp_osd_map.deepish_copy_from(*this);
+
+  // build array of pgs from the pool
+  const pg_pool_t* pool = get_pg_pool(pid);
+  vector<pg_t> pgs;
+  for (unsigned ps = 0; ps < pool->get_pg_num(); ++ps) {
+    pg_t pg(ps, pid);
+    vector<int> up;
+    tmp_osd_map.pg_to_up_acting_osds(pg, &up, nullptr, nullptr, nullptr);
+    ldout(cct, 20) << __func__ << " " << pg << " up " << up << dendl;
+    for (auto osd : up) {
+      if (osd != CRUSH_ITEM_NONE)
+        pgs.push_back(pg);
+    }
+  }
+
+  // swap pgs
+  while (true) {
+    int num_changes = 0;
+    for (auto pg : pgs) {
+      // if (found_a_good_swap(pg)) {
+      //   do_swap(pg)
+      //   num_changes++;
+      // }
+      ldout(cct, 20) << __func__ << "num_changes: " << num_changes << dendl;
+      if (!num_changes) {
+	break;
+      }
+    }
+  }
+}
+
 map<uint64_t,float> OSDMap::calc_desired_primary_distribution(
   CephContext *cct,
   int64_t pid,
