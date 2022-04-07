@@ -4775,39 +4775,23 @@ void OSDMap::calc_workload_balancer(
   CephContext *cct,
   int64_t pid)
 {
-  OSDMap tmp_osd_map;
-  tmp_osd_map.deepish_copy_from(*this);
-
-  // build array of pgs from the pool
-  const pg_pool_t* pool = get_pg_pool(pid);
-  vector<pg_t> pgs;
-  for (unsigned ps = 0; ps < pool->get_pg_num(); ++ps) {
-    pg_t pg(ps, pid);
-    vector<int> up;
-    tmp_osd_map.pg_to_up_acting_osds(pg, &up, nullptr, nullptr, nullptr);
-    ldout(cct, 20) << __func__ << " " << pg << " up " << up << dendl;
-    for (auto osd : up) {
-      if (osd != CRUSH_ITEM_NONE)
-        pgs.push_back(pg);
-    }
-  }
-
+  map<uint64_t,set<pg_t>> pgs_by_osd = get_pgs_by_osd(cct, pid);
   // swap pgs
   while (true) {
     int num_changes = 0;
-    for (auto pg : pgs) {
-      // if (found_a_good_swap(pg)) {
-      //   do_swap(pg)
-      //   num_changes++;
-      // }
-      ldout(cct, 20) << __func__ << "num_changes: " << num_changes << dendl;
-      //TODO: the if should be outside the loop - we want to complete the loop
-      //   before deciding to break from the while(true) block.
-      //   I also think that we may need additional condition here, but I am not sure.
-      //   This could be just an optimization. 
-      if (!num_changes) {
-	break;
+    for (auto [osd, pgs] : pgs_by_osd) {
+      for (auto pg : pgs) {
+        // if (found_a_good_swap(pg)) {
+        //   do_swap(pg)
+        //   num_changes++;
+        // }
+        ldout(cct, 20) << __func__ << "num_changes: " << num_changes << dendl;
       }
+    }
+    //   TODO: I also think that we may need additional condition here, but I am not sure.
+    //   This could be just an optimization.
+    if (!num_changes) {
+      break;
     }
   }
 }
@@ -4825,7 +4809,7 @@ map<uint64_t,float> OSDMap::calc_desired_primary_distribution(
     ldout(cct, 10) << __func__ << " calculating distribution for replicated pool "
                    << get_pool_name(pid) << dendl;
     uint64_t replica_count = pool->get_size();
-    map<uint64_t,set<pg_t>> pgs_by_osd = get_pgs_by_osd();
+    map<uint64_t,set<pg_t>> pgs_by_osd = get_pgs_by_osd(cct, pid);
     // First calculate the distribution using primary affinity and tally up the sum
     float sum = 0.0;
     for (auto& osd : osds) {
@@ -5177,24 +5161,27 @@ int OSDMap::calc_pg_upmaps(
   return num_changed;
 }
 
-
-map<uint64_t,set<pg_t>> OSDMap::get_pgs_by_osd()
+map<uint64_t,set<pg_t>> OSDMap::get_pgs_by_osd(
+    CephContext *cct,
+    int64_t pid)
 {
+  // Set up the OSDMap
   OSDMap tmp_osd_map;
   tmp_osd_map.deepish_copy_from(*this);
 
+  // Get the pool from the provided pool id
+  const pg_pool_t* pool = get_pg_pool(pid);
+
+  // build array of pgs from the pool
   map<uint64_t,set<pg_t>> pgs_by_osd;
-  //TODO - we are working pool by pool - I believe you should add pool
-  //   as an input parameter and return info only for this pool.
-  for (auto& [pid, pdata] : pools) {
-    for (unsigned ps = 0; ps < pdata.get_pg_num(); ++ps) {
-      pg_t pg(ps, pid);
-      vector<int> up;
-      tmp_osd_map.pg_to_up_acting_osds(pg, &up, nullptr, nullptr, nullptr);
-      for (auto osd : up) {
-	if (osd != CRUSH_ITEM_NONE)
-	  pgs_by_osd[osd].insert(pg);
-      }
+  for (unsigned ps = 0; ps < pool->get_pg_num(); ++ps) {
+    pg_t pg(ps, pid);
+    vector<int> up;
+    tmp_osd_map.pg_to_up_acting_osds(pg, &up, nullptr, nullptr, nullptr);
+    ldout(cct, 20) << __func__ << " " << pg << " up " << up << dendl;
+    for (auto osd : up) {
+      if (osd != CRUSH_ITEM_NONE)
+        pgs_by_osd[osd].insert(pg);
     }
   }
   return pgs_by_osd;
