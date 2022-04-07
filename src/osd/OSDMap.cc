@@ -4801,6 +4801,10 @@ void OSDMap::calc_workload_balancer(
       //   num_changes++;
       // }
       ldout(cct, 20) << __func__ << "num_changes: " << num_changes << dendl;
+      //TODO: the if should be outside the loop - we want to complete the loop
+      //   before deciding to break from the while(true) block.
+      //   I also think that we may need additional condition here, but I am not sure.
+      //   This could be just an optimization. 
       if (!num_changes) {
 	break;
       }
@@ -4832,9 +4836,15 @@ map<uint64_t,float> OSDMap::calc_desired_primary_distribution(
     // Then, stretch the values
     float factor = osds.size() / sum;
     ceph_assert(factor <= 1.0);
+    //TODO: I believe the assert is incorrect (it should be '>=' instead of '<=')
     for (auto [osd, osd_primary_count] : desired_primary_distribution) {
       desired_primary_distribution[osd] *= factor;
     }
+    //TODO: This is nice to have just for debugging - 
+    //   in the loop above you can clculate teh sum of desired_primary_distribution
+    //   here you can add assert that it is equal to number of pgs, but sincei it
+    //   involves float math you can't use '==' so the assert should be something 
+    //   like 'fabs(sum_desired - pool->get_pg_num()) < 0.01' instead.
   } else {
     ldout(cct, 10) << __func__ <<" skipping erasure pool "
                    << get_pool_name(pid) << dendl;
@@ -5174,6 +5184,8 @@ map<uint64_t,set<pg_t>> OSDMap::get_pgs_by_osd()
   tmp_osd_map.deepish_copy_from(*this);
 
   map<uint64_t,set<pg_t>> pgs_by_osd;
+  //TODO - we are working pool by pool - I believe you should add pool
+  //   as an input parameter and return info only for this pool.
   for (auto& [pid, pdata] : pools) {
     for (unsigned ps = 0; ps < pdata.get_pg_num(); ++ps) {
       pg_t pg(ps, pid);
