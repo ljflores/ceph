@@ -43,6 +43,7 @@ set(osd_srcs
   osd_perf_counters.cc
   ${CMAKE_SOURCE_DIR}/src/common/TrackedOp.cc
   ${CMAKE_SOURCE_DIR}/src/mgr/OSDPerfMetricTypes.cc
+  ${CMAKE_SOURCE_DIR}/src/common/MemoryModel.cc
   ${osd_cyg_functions_src}
   ${osdc_osd_srcs}
   osd_tracer.cc)

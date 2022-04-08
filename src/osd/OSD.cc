@@ -48,6 +48,7 @@
 #include "Watch.h"
 #include "osdc/Objecter.h"
 
+#include "common/MemoryModel.h"
 #include "common/errno.h"
 #include "common/ceph_argparse.h"
 #include "common/ceph_releases.h"
@@ -6043,7 +6044,20 @@ bool OSD::heartbeat_reset(Connection *con)
   return true;
 }
 
+void OSD::check_memory_usage()
+{
+  static MemoryModel mm(cct);
+  static MemoryModel::snap last;
+  mm.sample(&last);
+  static MemoryModel::snap baseline = last;
 
+  dout(2) << "Memory usage: "
+           << " total " << last.get_total()
+           << ", rss " << last.get_rss()
+           << ", heap " << last.get_heap()
+           << ", baseline " << baseline.get_heap()
+           << dendl;
+}
 
 // =========================================
 

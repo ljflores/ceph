@@ -1126,6 +1126,7 @@ protected:
   PerfCounters* create_logger();
   PerfCounters* create_recoverystate_perf();
   void tick();
+  void check_memory_usage();
   void tick_without_osd_lock();
   void _dispatch(Message *m);
   void dispatch_op(OpRequestRef op);
