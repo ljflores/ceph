@@ -161,3 +161,13 @@ enum {
 };
 
 PerfCounters *build_recoverystate_perf(CephContext *cct);
+
+// memory utilization
+enum {
+  l_osm_first = 2500,
+  l_osm_rss,
+  l_osm_heap,
+  l_osm_last,
+};
+
+PerfCounters *build_osd_memory_logger(CephContext *cct);

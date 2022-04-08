@@ -111,6 +111,7 @@ private:
 public:
   PerfCounters *&logger;
   PerfCounters *&recoverystate_perf;
+  PerfCounters *&m_logger;
   MonClient   *&monc;
 
   md_config_cacher_t<Option::size_t> osd_max_object_size;
@@ -1103,6 +1104,7 @@ protected:
   MgrClient   mgrc;
   PerfCounters      *logger;
   PerfCounters      *recoverystate_perf;
+  PerfCounters      *m_logger;
   std::unique_ptr<ObjectStore> store;
 #ifdef HAVE_LIBFUSE
   FuseStore *fuse_store = nullptr;
@@ -1125,6 +1127,7 @@ protected:
   ZTracer::Endpoint trace_endpoint;
   PerfCounters* create_logger();
   PerfCounters* create_recoverystate_perf();
+  PerfCounters* create_memory_logger();
   void tick();
   void check_memory_usage();
   void tick_without_osd_lock();

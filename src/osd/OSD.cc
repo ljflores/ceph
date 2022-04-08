@@ -257,6 +257,7 @@ OSDService::OSDService(OSD *osd, ceph::async::io_context_pool& poolctx) :
   client_messenger(osd->client_messenger),
   logger(osd->logger),
   recoverystate_perf(osd->recoverystate_perf),
+  m_logger(osd->m_logger),
   monc(osd->monc),
   osd_max_object_size(cct->_conf, "osd_max_object_size"),
   osd_skip_data_digest(cct->_conf, "osd_skip_data_digest"),
@@ -2210,6 +2211,7 @@ OSD::OSD(CephContext *cct_,
   mgrc(cct_, client_messenger, &mc->monmap),
   logger(create_logger()),
   recoverystate_perf(create_recoverystate_perf()),
+  m_logger(create_memory_logger()),
   store(std::move(store_)),
   log_client(cct, client_messenger, &mc->monmap, LogClient::NO_FLAGS),
   clog(log_client.create_channel()),
@@ -4259,6 +4261,13 @@ PerfCounters* OSD::create_recoverystate_perf()
   return recoverystate_perf;
 }
 
+PerfCounters* OSD::create_memory_logger()
+{
+  PerfCounters* m_logger = build_osd_memory_logger(cct);
+  cct->get_perfcounters_collection()->add(m_logger);
+  return m_logger;
+}
+
 int OSD::shutdown()
 {
   // vstart overwrites osd_fast_shutdown value in the conf file -> force the value here!
@@ -6057,6 +6066,9 @@ void OSD::check_memory_usage()
            << ", heap " << last.get_heap()
            << ", baseline " << baseline.get_heap()
            << dendl;
+
+  m_logger->set(l_osm_rss, last.get_rss());
+  m_logger->set(l_osm_heap, last.get_heap());
 }
 
 // =========================================
@@ -6114,6 +6126,8 @@ void OSD::tick()
 	       << " next " << next << dendl;
     }
   }
+
+  check_memory_usage();
 
   tick_timer.add_event_after(get_tick_interval(), new C_Tick(this));
 }

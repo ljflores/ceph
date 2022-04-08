@@ -319,3 +319,12 @@ PerfCounters *build_recoverystate_perf(CephContext *cct) {
 
   return rs_perf.create_perf_counters();
 }
+
+PerfCounters *build_osd_memory_logger(CephContext *cct) {
+  PerfCountersBuilder osm_plb(cct, "osd_mem", l_osm_first, l_osm_last);
+
+  osm_plb.add_u64(l_osm_heap, "heap", "Heap size");
+  osm_plb.add_u64(l_osm_rss, "rss", "RSS");
+
+  return osm_plb.create_perf_counters();
+}
