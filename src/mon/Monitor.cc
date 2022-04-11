@@ -31,6 +31,7 @@
 #include "common/blkdev.h"
 #include "common/cmdparse.h"
 #include "common/signal.h"
+#include "common/MemoryModel.h"
 
 #include "osd/OSDMap.h"
 
@@ -5768,6 +5769,21 @@ void Monitor::scrub_reset_timeout()
     }});
 }
 
+void Monitor::check_memory_usage()
+{
+  static MemoryModel mm(cct);
+  static MemoryModel::snap last;
+  mm.sample(&last);
+  static MemoryModel::snap baseline = last;
+
+  dout(2) << "Memory usage: "
+           << " total " << last.get_total()
+           << ", rss " << last.get_rss()
+           << ", heap " << last.get_heap()
+           << ", baseline " << baseline.get_heap()
+           << dendl;
+}
+
 /************ TICK ***************/
 void Monitor::new_tick()
 {
@@ -5875,6 +5891,7 @@ void Monitor::tick()
   }
 
   mgr_client.update_daemon_health(get_health_metrics());
+  check_memory_usage();
   new_tick();
 }
 

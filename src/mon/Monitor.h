@@ -1041,6 +1041,7 @@ private:
   void init_paxos();
   void refresh_from_paxos(bool *need_bootstrap);
   void shutdown();
+  void check_memory_usage();
   void tick();
 
   void handle_signal(int sig);
