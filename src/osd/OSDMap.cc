@@ -4811,24 +4811,21 @@ map<uint64_t,float> OSDMap::calc_desired_primary_distribution(
     uint64_t replica_count = pool->get_size();
     map<uint64_t,set<pg_t>> pgs_by_osd = get_pgs_by_osd(cct, pid);
     // First calculate the distribution using primary affinity and tally up the sum
-    float sum = 0.0;
+    float distribution_sum = 0.0;
     for (auto& osd : osds) {
       float osd_primary_count = (pgs_by_osd[osd].size() / replica_count) * get_primary_affinity(osd);
       desired_primary_distribution.insert({osd, osd_primary_count});
-      sum += osd_primary_count;
+      distribution_sum += osd_primary_count;
     }
     // Then, stretch the values
-    float factor = osds.size() / sum;
-    ceph_assert(factor <= 1.0);
-    //TODO: I believe the assert is incorrect (it should be '>=' instead of '<=')
+    float factor = osds.size() / distribution_sum;
+    float distribution_sum_desired = 0.0;
+    ceph_assert(factor >= 1.0);
     for (auto [osd, osd_primary_count] : desired_primary_distribution) {
       desired_primary_distribution[osd] *= factor;
+      distribution_sum_desired += desired_primary_distribution[osd];
     }
-    //TODO: This is nice to have just for debugging - 
-    //   in the loop above you can clculate teh sum of desired_primary_distribution
-    //   here you can add assert that it is equal to number of pgs, but sincei it
-    //   involves float math you can't use '==' so the assert should be something 
-    //   like 'fabs(sum_desired - pool->get_pg_num()) < 0.01' instead.
+    ceph_assert(fabs(distribution_sum_desired - pool->get_pg_num()) < 0.01);
   } else {
     ldout(cct, 10) << __func__ <<" skipping erasure pool "
                    << get_pool_name(pid) << dendl;
