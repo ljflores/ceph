@@ -4775,16 +4775,57 @@ void OSDMap::calc_workload_balancer(
   CephContext *cct,
   int64_t pid)
 {
-  map<uint64_t,set<pg_t>> pgs_by_osd = get_pgs_by_osd(cct, pid);
+  // Get the pool and the crush rule
+  const pg_pool_t* pool = get_pg_pool(pid);
+  int rule = pool->get_crush_rule();
+
+  // Get primaries by osd
+  map<uint64_t,set<pg_t>> pgs_by_osd;
+  map<uint64_t,set<pg_t>> p_primaries_by_osd;
+  get_pgs_by_osd(cct, pid, pgs_by_osd, &p_primaries_by_osd);
+
+  // calculate desired primary distribution
+  vector<uint64_t> osds;
+  for (auto [osd, pg] : p_primaries_by_osd) {
+    osds.push_back(osd);
+  }
+  map<uint64_t,float> desired_primary_distribution = calc_desired_primary_distribution(cct, pid, osds);
+
+  // Decide overfull and underfull osds
+  set<int> overfull;
+  vector<int> underfull;
+  for (auto [osd, pgs] : p_primaries_by_osd) {
+    if (pgs.size() > desired_primary_distribution[osd]) {
+      overfull.insert(osd);
+    } else {
+      underfull.push_back(osd);
+    }
+  }
+
   // swap pgs
+  vector<int> orig;
+  vector<int> out;
   while (true) {
     int num_changes = 0;
-    for (auto [osd, pgs] : pgs_by_osd) {
+    bool found_a_good_swap = 0;
+    for (auto [osd, pgs] : p_primaries_by_osd) {
       for (auto pg : pgs) {
-        // if (found_a_good_swap(pg)) {
-        //   do_swap(pg)
-        //   num_changes++;
-        // }
+	found_a_good_swap = crush->try_remap_rule(
+	    cct,
+	    rule,
+	    pool->get_size(),
+	    overfull, underfull,
+	    {},
+	    orig,
+	    &out);
+        if (found_a_good_swap) {
+	  // TODO: not entirely sure if this assert is necessary,
+	  // but I think the output should for sure be different
+	  // if there is indeed a viable swap.
+	  ceph_assert(out != orig);
+          // TODO: do_swap(pg)
+          num_changes++;
+        }
         ldout(cct, 20) << __func__ << "num_changes: " << num_changes << dendl;
       }
     }
@@ -4809,7 +4850,8 @@ map<uint64_t,float> OSDMap::calc_desired_primary_distribution(
     ldout(cct, 10) << __func__ << " calculating distribution for replicated pool "
                    << get_pool_name(pid) << dendl;
     uint64_t replica_count = pool->get_size();
-    map<uint64_t,set<pg_t>> pgs_by_osd = get_pgs_by_osd(cct, pid);
+    map<uint64_t,set<pg_t>> pgs_by_osd;
+    get_pgs_by_osd(cct, pid, pgs_by_osd);
     // First calculate the distribution using primary affinity and tally up the sum
     float distribution_sum = 0.0;
     for (auto& osd : osds) {
@@ -5158,9 +5200,11 @@ int OSDMap::calc_pg_upmaps(
   return num_changed;
 }
 
-map<uint64_t,set<pg_t>> OSDMap::get_pgs_by_osd(
+void OSDMap::get_pgs_by_osd(
     CephContext *cct,
-    int64_t pid)
+    int64_t pid,
+    map<uint64_t, set<pg_t>> &pgs_by_osd,
+    map<uint64_t, set<pg_t>> *p_primaries_by_osd) const
 {
   // Set up the OSDMap
   OSDMap tmp_osd_map;
@@ -5170,18 +5214,24 @@ map<uint64_t,set<pg_t>> OSDMap::get_pgs_by_osd(
   const pg_pool_t* pool = get_pg_pool(pid);
 
   // build array of pgs from the pool
-  map<uint64_t,set<pg_t>> pgs_by_osd;
   for (unsigned ps = 0; ps < pool->get_pg_num(); ++ps) {
     pg_t pg(ps, pid);
     vector<int> up;
-    tmp_osd_map.pg_to_up_acting_osds(pg, &up, nullptr, nullptr, nullptr);
-    ldout(cct, 20) << __func__ << " " << pg << " up " << up << dendl;
+    int primary;
+    tmp_osd_map.pg_to_up_acting_osds(pg, &up, &primary, nullptr, nullptr);
+    ldout(cct, 20) << __func__ << " " << pg
+                   << " up " << up
+                   << " primary " << primary
+                   << dendl;
     for (auto osd : up) {
       if (osd != CRUSH_ITEM_NONE)
         pgs_by_osd[osd].insert(pg);
     }
+    if (p_primaries_by_osd != nullptr) {
+      if (primary != CRUSH_ITEM_NONE)
+        (*p_primaries_by_osd)[primary].insert(pg);
+    }
   }
-  return pgs_by_osd;
 }
 
 float OSDMap::build_pool_pgs_info (

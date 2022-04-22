@@ -1473,9 +1473,12 @@ public:
 
 private: // Bunch of internal functions used only by calc_pg_upmaps (result of code refactoring)
 
-  std::map<uint64_t,std::set<pg_t>> get_pgs_by_osd(
+  void get_pgs_by_osd(
     CephContext *cct,
-    int64_t pid); // used in calc_desired_primary_distribution()
+    int64_t pid,
+    std::map<uint64_t, std::set<pg_t>> &pgs_by_osd,
+    std::map<uint64_t, std::set<pg_t>> *p_primaries_by_osd = nullptr
+  ) const; // used in calc_desired_primary_distribution()
 
   float build_pool_pgs_info (
     CephContext *cct,
