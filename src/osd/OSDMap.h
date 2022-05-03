@@ -1463,13 +1463,27 @@ public:
     );
 
 private: // Bunch of internal functions used only by calc_pg_upmaps (result of code refactoring)
+
+  std::map<uint64_t,std::set<pg_t>> get_pgs_by_osd(
+    CephContext *cct,
+    int64_t pid,
+    std::map<uint64_t, std::set<pg_t>> *p_primaries_by_osd = nullptr
+    ) const; // used in calc_desired_primary_distribution()
+
+  float get_osds_weight(
+    CephContext *cct,
+    const OSDMap& tmp_osd_map,
+    int64_t pid,
+    std::map<int,float>& osds_weight
+  ) const;
+
   float build_pool_pgs_info (
     CephContext *cct,
     const std::set<int64_t>& pools,        ///< [optional] restrict to pool
     const OSDMap& tmp_osd_map,
     int& total_pgs,
     std::map<int, std::set<pg_t>>& pgs_by_osd,
-    std::map<int,float>& osd_weight
+    std::map<int,float>& osds_weight
   );  // return total weight of all OSDs
 
   float calc_deviations (
@@ -1558,6 +1572,19 @@ bool try_drop_remap_underfull(
   );
 
 public:
+    typedef struct {
+      float primary_affinity_avg;
+      float raw_score;
+      float optimal_score;  // based on primary_affinity values
+      float adjusted_score; // based on raw_score and primary_affinity_avg 1 is optimal
+    } wl_balance_info_t;
+
+  float calc_wl_balance_score(
+    CephContext *cct,
+    int64_t pool_id,
+    wl_balance_info_t *p_wlb_more_info = nullptr
+  ) const;
+
   int get_osds_by_bucket_name(const std::string &name, std::set<int> *osds) const;
 
   bool have_pg_upmaps(pg_t pg) const {

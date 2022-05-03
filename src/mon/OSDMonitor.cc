@@ -6065,21 +6065,33 @@ bool OSDMonitor::preprocess_command(MonOpRequestRef op)
     } else {
       if (f)
 	f->open_array_section("pools");
-      for (map<int64_t,pg_pool_t>::const_iterator it = osdmap.get_pools().begin();
-	   it != osdmap.get_pools().end();
-	   ++it) {
+      for (auto &[pid, pdata] : osdmap.get_pools()) {
 	if (f) {
 	  if (detail == "detail") {
 	    f->open_object_section("pool");
-	    f->dump_int("pool_id", it->first);
-	    f->dump_string("pool_name", osdmap.get_pool_name(it->first));
-	    it->second.dump(f.get());
+	    f->dump_int("pool_id", pid);
+	    f->dump_string("pool_name", osdmap.get_pool_name(pid));
+	    pdata.dump(f.get());
+	    if (pdata.get_type() == pg_pool_t::TYPE_REPLICATED) {
+	      // Add wlb section with values for score, optimal score, raw score
+	      // and primary_affinity average
+	      OSDMap::wl_balance_info_t wlb_info;
+	      f->open_object_section("workload_balance");
+	      f->dump_float("score",
+	        osdmap.calc_wl_balance_score(g_ceph_context, pid, &wlb_info));
+	      f->dump_float("optimal_score", wlb_info.optimal_score);
+	      f->dump_float("raw_score", wlb_info.raw_score);
+	      f->dump_float("average_primary_affinity",
+	        wlb_info.primary_affinity_avg);
+	      f->close_section();
+	    }
+
 	    f->close_section();
 	  } else {
-	    f->dump_string("pool_name", osdmap.get_pool_name(it->first));
+	    f->dump_string("pool_name", osdmap.get_pool_name(pid));
 	  }
 	} else {
-	  rdata.append(osdmap.get_pool_name(it->first) + "\n");
+	  rdata.append(osdmap.get_pool_name(pid) + "\n");
 	}
       }
       if (f) {
