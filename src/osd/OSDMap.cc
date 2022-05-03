@@ -4775,57 +4775,21 @@ void OSDMap::calc_workload_balancer(
   CephContext *cct,
   int64_t pid)
 {
-  // Get the pool and the crush rule
+  // Get the pool
   const pg_pool_t* pool = get_pg_pool(pid);
-  int rule = pool->get_crush_rule();
 
-  // Get primaries by osd
+  // Get pgs by osd
   map<uint64_t,set<pg_t>> pgs_by_osd;
-  map<uint64_t,set<pg_t>> p_primaries_by_osd;
-  get_pgs_by_osd(cct, pid, pgs_by_osd, &p_primaries_by_osd);
-
-  // calculate desired primary distribution
-  vector<uint64_t> osds;
-  for (auto [osd, pg] : p_primaries_by_osd) {
-    osds.push_back(osd);
-  }
-  map<uint64_t,float> desired_primary_distribution = calc_desired_primary_distribution(cct, pid, osds);
-
-  // Decide overfull and underfull osds
-  set<int> overfull;
-  vector<int> underfull;
-  for (auto [osd, pgs] : p_primaries_by_osd) {
-    if (pgs.size() > desired_primary_distribution[osd]) {
-      overfull.insert(osd);
-    } else {
-      underfull.push_back(osd);
-    }
-  }
+  get_pgs_by_osd(cct, pid, pgs_by_osd);
 
   // swap pgs
-  vector<int> orig;
-  vector<int> out;
   while (true) {
     int num_changes = 0;
-    bool found_a_good_swap = 0;
-    for (auto [osd, pgs] : p_primaries_by_osd) {
+    for (auto [osd, pgs] : pgs_by_osd) {
       for (auto pg : pgs) {
-	found_a_good_swap = crush->try_remap_rule(
-	    cct,
-	    rule,
-	    pool->get_size(),
-	    overfull, underfull,
-	    {},
-	    orig,
-	    &out);
-        if (found_a_good_swap) {
-	  // TODO: not entirely sure if this assert is necessary,
-	  // but I think the output should for sure be different
-	  // if there is indeed a viable swap.
-	  ceph_assert(out != orig);
+        // TODO: if (found_a_good_swap(pg)) {
           // TODO: do_swap(pg)
           num_changes++;
-        }
         ldout(cct, 20) << __func__ << "num_changes: " << num_changes << dendl;
       }
     }
