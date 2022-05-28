@@ -1453,10 +1453,11 @@ public:
     std::vector<int> *orig,
     std::vector<int> *out);             ///< resulting alternative mapping
 
-  void calc_workload_balancer(
+  int calc_workload_balancer(
     CephContext *cct,
-    int64_t pid);
-  
+    int64_t pid,
+    Incremental *pending_inc);
+
   std::map<uint64_t,float> calc_desired_primary_distribution(
     CephContext *cct,
     int64_t pid, // pool id
@@ -1471,14 +1472,16 @@ public:
     std::random_device::result_type *p_seed = nullptr  ///< [optional] for regression tests
     );
 
-private: // Bunch of internal functions used only by calc_pg_upmaps (result of code refactoring)
-
   void get_pgs_by_osd(
     CephContext *cct,
     int64_t pid,
     std::map<uint64_t, std::set<pg_t>> &pgs_by_osd,
     std::map<uint64_t, std::set<pg_t>> *p_primaries_by_osd = nullptr
   ) const; // used in calc_desired_primary_distribution()
+
+  void update_primary_temp(pg_t pgid, int64_t osd);
+
+private: // Bunch of internal functions used only by calc_pg_upmaps (result of code refactoring)
 
   float build_pool_pgs_info (
     CephContext *cct,

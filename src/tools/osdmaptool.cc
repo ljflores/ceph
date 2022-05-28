@@ -157,6 +157,8 @@ int main(int argc, const char **argv)
   std::set<std::string> upmap_pools;
   std::random_device::result_type upmap_seed;
   std::random_device::result_type *upmap_p_seed = nullptr;
+  bool workload = false;
+  std::string workload_pool;
 
   int64_t pg_num = -1;
   bool test_map_pgs_dump_all = false;
@@ -186,12 +188,16 @@ int main(int argc, const char **argv)
     } else if (ceph_argparse_witharg(args, i, &upmap_file, "--upmap", (char*)NULL)) {
       upmap_cleanup = true;
       upmap = true;
+    } else if (ceph_argparse_witharg(args, i, &upmap_file, "--workload", (char*)NULL)) {
+	workload = true;
     } else if (ceph_argparse_witharg(args, i, &upmap_max, err, "--upmap-max", (char*)NULL)) {
     } else if (ceph_argparse_witharg(args, i, &upmap_deviation, err, "--upmap-deviation", (char*)NULL)) {
     } else if (ceph_argparse_witharg(args, i, (int *)&upmap_seed, err, "--upmap-seed", (char*)NULL)) {
       upmap_p_seed = &upmap_seed;
     } else if (ceph_argparse_witharg(args, i, &val, "--upmap-pool", (char*)NULL)) {
       upmap_pools.insert(val);
+    } else if (ceph_argparse_witharg(args, i, &val, "--workload-pool", (char*)NULL)) {
+      workload_pool = val;
     } else if (ceph_argparse_witharg(args, i, &num_osd, err, "--createsimple", (char*)NULL)) {
       if (!err.str().empty()) {
 	cerr << err.str() << std::endl;
@@ -442,6 +448,43 @@ int main(int argc, const char **argv)
       print_inc_upmaps(pending_inc, upmap_fd);
       r = osdmap.apply_incremental(pending_inc);
       ceph_assert(r == 0);
+    }
+  }
+  if (workload) {
+    cout << "workload balancing" << std::endl;
+    int64_t pid = osdmap.lookup_pg_pool_name(workload_pool);
+
+    map<uint64_t,set<pg_t>> pgs_by_osd;
+    osdmap.get_pgs_by_osd(g_ceph_context, pid, pgs_by_osd);
+
+    OSDMap::Incremental pending_inc(osdmap.get_epoch()+1);
+    vector<int> up_osds;
+    vector<int> acting_osds;
+    int up_primary, acting_primary;
+
+
+    for (auto [osd, pgs] : pgs_by_osd) {
+      for (auto pgid : pgs) {
+        osdmap.pg_to_up_acting_osds(pgid, &up_osds, &up_primary,
+            &acting_osds, &acting_primary);
+
+        cout << "before the change -- acting_primary: " << acting_primary << " up_osds[1]: " << acting_osds[1] << std::endl;
+
+        // make second OSD primary via incremental
+        pending_inc.new_primary_temp[pgid] = acting_osds[1];
+	osdmap.update_primary_temp(pgid, acting_osds[1]);
+	cout << "new_primary_temp: " << pending_inc.new_primary_temp[pgid] << std::endl;
+      }
+    }
+
+    osdmap.apply_incremental(pending_inc);
+
+    for (auto [osd, pgs] : pgs_by_osd) {
+      for (auto pgid : pgs) {
+	osdmap.pg_to_up_acting_osds(pgid, &up_osds, &up_primary,
+            &acting_osds, &acting_primary);
+        cout << "after the change -- acting_primary: " << acting_primary << " acting_osds[1]: " << acting_osds[1] << std::endl;
+      }
     }
   }
   if (upmap) {

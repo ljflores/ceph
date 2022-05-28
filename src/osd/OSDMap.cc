@@ -4771,27 +4771,38 @@ bool OSDMap::try_pg_upmap(
   return true;
 }
 
-void OSDMap::calc_workload_balancer(
-  CephContext *cct,
-  int64_t pid)
-{
-  // Get the pool
-  const pg_pool_t* pool = get_pg_pool(pid);
 
-  // Get pgs by osd
+int OSDMap::calc_workload_balancer(
+  CephContext *cct,
+  int64_t pid,
+  OSDMap::Incremental *pending_inc)
+{
+
+  OSDMap tmp_osd_map;
+  tmp_osd_map.deepish_copy_from(*this);
+
   map<uint64_t,set<pg_t>> pgs_by_osd;
   get_pgs_by_osd(cct, pid, pgs_by_osd);
-
+  vector<pg_t> pgs_to_check;
+  for (auto [osd, pgs] : pgs_by_osd) {
+    for (auto pg : pgs) {
+      pgs_to_check.push_back(pg);
+    }
+  }
+  int num_changes = 0;
   // swap pgs
   while (true) {
-    int num_changes = 0;
-    for (auto [osd, pgs] : pgs_by_osd) {
-      for (auto pg : pgs) {
-        // TODO: if (found_a_good_swap(pg)) {
-          // TODO: do_swap(pg)
-          num_changes++;
-        ldout(cct, 20) << __func__ << "num_changes: " << num_changes << dendl;
-      }
+    for (auto pg : pgs_to_check) {
+
+      vector<int> up_osds;
+      vector<int> acting_osds;
+      int up_primary, acting_primary;
+
+      tmp_osd_map.pg_to_up_acting_osds(pg, &up_osds, &up_primary,
+	  &acting_osds, &acting_primary);
+      pending_inc->new_primary_temp[pg] = acting_osds[1]; // make the second primary
+      num_changes++;
+      ldout(cct, 20) << __func__ << "num_changes: " << num_changes << dendl;
     }
     //   TODO: I also think that we may need additional condition here, but I am not sure.
     //   This could be just an optimization.
@@ -4799,6 +4810,7 @@ void OSDMap::calc_workload_balancer(
       break;
     }
   }
+  return num_changes;
 }
 
 map<uint64_t,float> OSDMap::calc_desired_primary_distribution(
@@ -5162,6 +5174,10 @@ int OSDMap::calc_pg_upmaps(
   }
   ldout(cct, 10) << " num_changed = " << num_changed << dendl;
   return num_changed;
+}
+
+void OSDMap::update_primary_temp(pg_t pgid, int64_t osd) {
+  (*primary_temp)[pgid] = osd;
 }
 
 void OSDMap::get_pgs_by_osd(
