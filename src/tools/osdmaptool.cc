@@ -101,6 +101,20 @@ void print_inc_upmaps(const OSDMap::Incremental& pending_inc, int fd)
   }
 }
 
+void print_inc_workload(OSDMap::Incremental& pending_inc, int fd)
+{
+  ostringstream ss;
+  for (auto& i : pending_inc.new_primary_temp) {
+    ss << "ceph osd primary-temp " << i.first << " " << i.second << std::endl;
+  }
+  string s = ss.str();
+  int r = safe_write(fd, s.c_str(), s.size());
+  if (r < 0) {
+    cerr << "error writing output: " << cpp_strerror(r) << std::endl;
+    exit(1);
+  }
+}
+
 int main(int argc, const char **argv)
 {
   auto args = argv_to_vec(argc, argv);
@@ -451,41 +465,19 @@ int main(int argc, const char **argv)
     }
   }
   if (workload) {
-    cout << "workload balancing" << std::endl;
     int64_t pid = osdmap.lookup_pg_pool_name(workload_pool);
-
-    map<uint64_t,set<pg_t>> pgs_by_osd;
-    osdmap.get_pgs_by_osd(g_ceph_context, pid, pgs_by_osd);
-
+    if (pid < 0) {
+      cerr << " pool " << workload_pool << " does not exist" << std::endl;
+      exit(1);
+    }
     OSDMap::Incremental pending_inc(osdmap.get_epoch()+1);
-    vector<int> up_osds;
-    vector<int> acting_osds;
-    int up_primary, acting_primary;
+    int num_changes = osdmap.calc_workload_balancer(g_ceph_context, pid, &pending_inc);
 
-
-    for (auto [osd, pgs] : pgs_by_osd) {
-      for (auto pgid : pgs) {
-        osdmap.pg_to_up_acting_osds(pgid, &up_osds, &up_primary,
-            &acting_osds, &acting_primary);
-
-        cout << "before the change -- acting_primary: " << acting_primary << " up_osds[1]: " << acting_osds[1] << std::endl;
-
-        // make second OSD primary via incremental
-        pending_inc.new_primary_temp[pgid] = acting_osds[1];
-	osdmap.update_primary_temp(pgid, acting_osds[1]);
-	cout << "new_primary_temp: " << pending_inc.new_primary_temp[pgid] << std::endl;
-      }
+    if (num_changes > 0) {
+      print_inc_workload(pending_inc, upmap_fd);
     }
-
-    osdmap.apply_incremental(pending_inc);
-
-    for (auto [osd, pgs] : pgs_by_osd) {
-      for (auto pgid : pgs) {
-	osdmap.pg_to_up_acting_osds(pgid, &up_osds, &up_primary,
-            &acting_osds, &acting_primary);
-        cout << "after the change -- acting_primary: " << acting_primary << " acting_osds[1]: " << acting_osds[1] << std::endl;
-      }
-    }
+    // if save:
+    //    osdmap.apply_incremental(pending_inc);
   }
   if (upmap) {
     cout << "upmap, max-count " << upmap_max

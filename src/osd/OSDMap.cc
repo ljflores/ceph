@@ -4778,37 +4778,37 @@ int OSDMap::calc_workload_balancer(
   OSDMap::Incremental *pending_inc)
 {
 
+  // Get a copy of the osdmap
   OSDMap tmp_osd_map;
   tmp_osd_map.deepish_copy_from(*this);
 
+  // Get pgs by osd (map of osd -> pgs)
   map<uint64_t,set<pg_t>> pgs_by_osd;
   get_pgs_by_osd(cct, pid, pgs_by_osd);
-  vector<pg_t> pgs_to_check;
+
+  // Transfer pgs into a single set, `pgs_to_swap`.
+  // This is to avoid poor runtime when we loop through the pgs.
+  vector<pg_t> pgs_to_swap;
   for (auto [osd, pgs] : pgs_by_osd) {
     for (auto pg : pgs) {
-      pgs_to_check.push_back(pg);
+      pgs_to_swap.push_back(pg);
     }
   }
+
+  ldout(cct, 20) << __func__ << " pgs_to_swap size: " << pgs_to_swap.size() << dendl;
+
+  // get ready to swap pgs
   int num_changes = 0;
-  // swap pgs
-  while (true) {
-    for (auto pg : pgs_to_check) {
-
-      vector<int> up_osds;
-      vector<int> acting_osds;
-      int up_primary, acting_primary;
-
-      tmp_osd_map.pg_to_up_acting_osds(pg, &up_osds, &up_primary,
-	  &acting_osds, &acting_primary);
-      pending_inc->new_primary_temp[pg] = acting_osds[1]; // make the second primary
-      num_changes++;
-      ldout(cct, 20) << __func__ << "num_changes: " << num_changes << dendl;
-    }
-    //   TODO: I also think that we may need additional condition here, but I am not sure.
-    //   This could be just an optimization.
-    if (!num_changes) {
-      break;
-    }
+  vector<int> up_osds;
+  vector<int> acting_osds;
+  int up_primary, acting_primary;
+  for (auto pg : pgs_to_swap) {
+    tmp_osd_map.pg_to_up_acting_osds(pg, &up_osds, &up_primary,
+	&acting_osds, &acting_primary);
+    pending_inc->new_primary_temp[pg] = acting_osds[1]; // make the results visible globally
+    (*tmp_osd_map.primary_temp)[pg] = acting_osds[1]; // make the third primary (just proving that we can swap pgs here)
+    num_changes++;
+    ldout(cct, 20) << __func__ << " num_changes: " << num_changes << dendl;
   }
   return num_changes;
 }
@@ -5194,6 +5194,7 @@ void OSDMap::get_pgs_by_osd(
   const pg_pool_t* pool = get_pg_pool(pid);
 
   // build array of pgs from the pool
+  ldout(cct, 20) << __func__ << " pool->get_pg_num() " << pool->get_pg_num() << dendl;
   for (unsigned ps = 0; ps < pool->get_pg_num(); ++ps) {
     pg_t pg(ps, pid);
     vector<int> up;
