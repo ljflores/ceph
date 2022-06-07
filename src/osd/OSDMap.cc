@@ -4804,25 +4804,43 @@ int OSDMap::calc_workload_balancer(
   // calculate desired primary distribution for each osd
   map<uint64_t,float> desired_prim_dist = calc_desired_primary_distribution(cct, pid, osds_to_check);
 
+  // calculate the primary distributuion score for each osd
+  // TODO: Ideally this should be sorted. We may need to create a separate class for this.
+  map<uint64_t,float> prim_dist_score;
+  float actual;
+  float desired;
+  for (auto osd : osds_to_check) {
+    actual = (*primaries_by_osd)[osd].size();
+    desired = desired_prim_dist[osd];
+    prim_dist_score[osd] = actual - desired;
+  }
+
   // get ready to swap pgs
-  int num_changes = 0;
-  vector<int> up_osds;
-  vector<int> acting_osds;
-  int up_primary, acting_primary;
-  float prim_dist_score;
+  int num_changes = 0; // Josh says this should be inside the while loop; not sure about that if we want to return the value at the end.
   while (true) {
+    vector<int> up_osds;
+    vector<int> acting_osds;
+    int up_primary, acting_primary;
     for (auto pg : pgs_to_swap) {
       // fill in the up, up primary, acting, and acting primary for the current PG
       tmp_osd_map.pg_to_up_acting_osds(pg, &up_osds, &up_primary,
 	  &acting_osds, &acting_primary);
-
-      // prim_dist_score = abs(desired - actual)
-      prim_dist_score = std::abs(desired_prim_dist[acting_primary] - (*primaries_by_osd)[acting_primary].size());
-
-      // if the score is larger than we want, swap the pg.
-      if (prim_dist_score > 1) {
-	pending_inc->new_primary_temp[pg] = acting_osds[1]; // TODO: fix this; setting it to the second OSD for now
-	(*tmp_osd_map.primary_temp)[pg] = acting_osds[1]; // update the tmp osd map so we can re-calculate the prim_dist_score
+      // TODO: we are using the acting primary right now for testing, but eventually we will want the up primary.
+      // find the OSD that would make the best swap.
+      uint64_t better_osd = acting_primary;
+      for (auto [osd, curr_score] : prim_dist_score) {
+	if ((prim_dist_score[acting_primary] > 1) && // the primary score is larger than ideal
+	    ((prim_dist_score[acting_primary] - curr_score) > 1) && // the primary score is over the current score we are considering by at least 1 PG
+	    (curr_score < prim_dist_score[better_osd]) && // the current score we are considering is lower than the last recorded best score
+	    (desired_prim_dist[osd] > 0)) // the OSD we are considering is not off limits (the primary affinity is above 0)
+	{
+	  better_osd = osd;
+	}
+      }
+      // make the swap if the balancer has chosen a new primary
+      if (better_osd != acting_primary) {
+	pending_inc->new_primary_temp[pg] = acting_osds[better_osd];
+	prim_dist_score[better_osd] += 1; // update the new prim_dist_score
 	num_changes++;
       }
       ldout(cct, 20) << __func__ << " num_changes: " << num_changes << dendl;
