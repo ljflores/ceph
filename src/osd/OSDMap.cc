@@ -4783,32 +4783,55 @@ int OSDMap::calc_workload_balancer(
   tmp_osd_map.deepish_copy_from(*this);
 
   // Get pgs by osd (map of osd -> pgs)
+  // Get primaries by osd (map of osd -> primary)
   map<uint64_t,set<pg_t>> pgs_by_osd;
-  get_pgs_by_osd(cct, pid, pgs_by_osd);
+  map<uint64_t, set<pg_t>> *primaries_by_osd;
+  get_pgs_by_osd(cct, pid, pgs_by_osd, primaries_by_osd);
 
-  // Transfer pgs into a single set, `pgs_to_swap`.
-  // This is to avoid poor runtime when we loop through the pgs.
-  vector<pg_t> pgs_to_swap;
+  // Transfer pgs into a set, `pgs_to_swap`.
+  // Transfer osds into a set, `osds_to_check`.
+  // This is to avoid poor runtime when we loop through the pgs and to set up
+  // our call to calc_desired_primary_distribution.
+  set<pg_t> pgs_to_swap;
+  vector<uint64_t> osds_to_check;
   for (auto [osd, pgs] : pgs_by_osd) {
+    osds_to_check.push_back(osd);
     for (auto pg : pgs) {
-      pgs_to_swap.push_back(pg);
+      pgs_to_swap.insert(pg);
     }
   }
 
-  ldout(cct, 20) << __func__ << " pgs_to_swap size: " << pgs_to_swap.size() << dendl;
+  // calculate desired primary distribution for each osd
+  map<uint64_t,float> desired_prim_dist = calc_desired_primary_distribution(cct, pid, osds_to_check);
 
   // get ready to swap pgs
   int num_changes = 0;
   vector<int> up_osds;
   vector<int> acting_osds;
   int up_primary, acting_primary;
-  for (auto pg : pgs_to_swap) {
-    tmp_osd_map.pg_to_up_acting_osds(pg, &up_osds, &up_primary,
-	&acting_osds, &acting_primary);
-    pending_inc->new_primary_temp[pg] = acting_osds[1]; // make the results visible globally
-    (*tmp_osd_map.primary_temp)[pg] = acting_osds[1]; // make the third primary (just proving that we can swap pgs here)
-    num_changes++;
-    ldout(cct, 20) << __func__ << " num_changes: " << num_changes << dendl;
+  float prim_dist_score;
+  while (true) {
+    for (auto pg : pgs_to_swap) {
+      // fill in the up, up primary, acting, and acting primary for the current PG
+      tmp_osd_map.pg_to_up_acting_osds(pg, &up_osds, &up_primary,
+	  &acting_osds, &acting_primary);
+
+      // prim_dist_score = abs(desired - actual)
+      prim_dist_score = std::abs(desired_prim_dist[acting_primary] - (*primaries_by_osd)[acting_primary].size());
+
+      // if the score is larger than we want, swap the pg.
+      if (prim_dist_score > 1) {
+	pending_inc->new_primary_temp[pg] = acting_osds[1]; // TODO: fix this; setting it to the second OSD for now
+	(*tmp_osd_map.primary_temp)[pg] = acting_osds[1]; // update the tmp osd map so we can re-calculate the prim_dist_score
+	num_changes++;
+      }
+      ldout(cct, 20) << __func__ << " num_changes: " << num_changes << dendl;
+    }
+    // If there are no changes after one pass through the pgs, then no further optimizations can be made.
+    if (num_changes == 0) {
+      ldout(cct, 20) << __func__ << " num_changes is 0; no further optimizations can be made." << dendl;
+      break;
+    }
   }
   return num_changes;
 }
