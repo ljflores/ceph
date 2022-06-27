@@ -1467,8 +1467,9 @@ private: // Bunch of internal functions used only by calc_pg_upmaps (result of c
   std::map<uint64_t,std::set<pg_t>> get_pgs_by_osd(
     CephContext *cct,
     int64_t pid,
-    std::map<uint64_t, std::set<pg_t>> *p_primaries_by_osd = nullptr
-    ) const; // used in calc_desired_primary_distribution()
+    std::map<uint64_t, std::set<pg_t>> *p_primaries_by_osd = nullptr,
+    std::map<uint64_t, std::set<pg_t>> *p_acting_primaries_by_osd = nullptr
+  ) const; // used in calc_desired_primary_distribution()
 
   float get_osds_weight(
     CephContext *cct,
@@ -1574,9 +1575,13 @@ bool try_drop_remap_underfull(
 public:
     typedef struct {
       float primary_affinity_avg;
+      float primary_affinity_weighted;
+      float primary_affinity_w_avg;
       float raw_score;
-      float optimal_score;  // based on primary_affinity values
-      float adjusted_score; // based on raw_score and primary_affinity_avg 1 is optimal
+      float optimal_score;  	// based on primary_affinity values
+      float adjusted_score; 	// based on raw_score and primary_affinity_avg 1 is optimal
+      float acting_raw_score;   // based on active_primaries (temporary)
+      float acting_adj_score;   // based on raw_active_score and primary_affinity_avg 1 is optimal
     } wl_balance_info_t;
 
   float calc_wl_balance_score(

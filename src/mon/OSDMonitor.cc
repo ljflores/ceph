@@ -6077,12 +6077,18 @@ bool OSDMonitor::preprocess_command(MonOpRequestRef op)
 	      // and primary_affinity average
 	      OSDMap::wl_balance_info_t wlb_info;
 	      f->open_object_section("workload_balance");
-	      f->dump_float("score",
+	      f->dump_float("score (acting)",
 	        osdmap.calc_wl_balance_score(g_ceph_context, pid, &wlb_info));
+	      f->dump_float("score (stable)", wlb_info.adjusted_score);
 	      f->dump_float("optimal_score", wlb_info.optimal_score);
-	      f->dump_float("raw_score", wlb_info.raw_score);
+	      f->dump_float("raw_score (acting)", wlb_info.acting_raw_score);
+	      f->dump_float("raw_score (stable)", wlb_info.raw_score);
+	      f->dump_float("primary_affinity_weighted", 
+	        wlb_info.primary_affinity_weighted);
 	      f->dump_float("average_primary_affinity",
 	        wlb_info.primary_affinity_avg);
+	      f->dump_float("average_primary_affinity_weighted",
+	        wlb_info.primary_affinity_w_avg);		
 	      f->close_section();
 	    }
 
