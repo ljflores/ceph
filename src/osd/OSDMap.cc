@@ -5108,7 +5108,8 @@ int OSDMap::calc_pg_upmaps(
 map<uint64_t,set<pg_t>> OSDMap::get_pgs_by_osd(
     CephContext *cct,
     int64_t pid,
-    map<uint64_t, set<pg_t>> *p_primaries_by_osd) const
+    map<uint64_t, set<pg_t>> *p_primaries_by_osd,
+    map<uint64_t, set<pg_t>> *p_acting_primaries_by_osd) const
 {
   // Set up the OSDMap
   OSDMap tmp_osd_map;
@@ -5123,10 +5124,12 @@ map<uint64_t,set<pg_t>> OSDMap::get_pgs_by_osd(
     pg_t pg(ps, pid);
     vector<int> up;
     int primary;
-    tmp_osd_map.pg_to_up_acting_osds(pg, &up, &primary, nullptr, nullptr);
+    int acting_prim;
+    tmp_osd_map.pg_to_up_acting_osds(pg, &up, &primary, nullptr, &acting_prim);
     ldout(cct, 20) << __func__ << " " << pg
                    << " up " << up
 		   << " primary " << primary
+		   << " acting_primary " << acting_prim
 		   << dendl;
     for (auto osd : up) {
       if (osd != CRUSH_ITEM_NONE)
@@ -5136,7 +5139,11 @@ map<uint64_t,set<pg_t>> OSDMap::get_pgs_by_osd(
       if (primary != CRUSH_ITEM_NONE)
 	(*p_primaries_by_osd)[primary].insert(pg);
     }
-  }
+    if (p_acting_primaries_by_osd != nullptr) {
+      if (acting_prim != CRUSH_ITEM_NONE)
+	(*p_acting_primaries_by_osd)[acting_prim].insert(pg);
+    }
+}
   return pgs_by_osd;
 }
 
@@ -5552,22 +5559,24 @@ OSDMap::candidates_t OSDMap::build_candidates(
 }
 
 float OSDMap::calc_wl_balance_score(CephContext *cct, int64_t pool_id,
-				    wl_balance_info_t *p_wlb_more_info) const
+				    wl_balance_info_t *p_wlbmi) const
 {
   ldout(cct,20) << __func__ << " pool " << get_pool_name(pool_id) << dendl;
 
+  ceph_assert(pools.count(pool_id));
   const pg_pool_t* pool = get_pg_pool(pool_id);
   auto num_pgs = pool->get_pg_num();
 
   map<uint64_t,set<pg_t>> pgs_by_osd;
-  map<uint64_t,set<pg_t>> primaries_by_osd;
+  map<uint64_t,set<pg_t>> prim_pgs_by_osd;
+  map<uint64_t,set<pg_t>> acting_prims_by_osd;
 
-  pgs_by_osd = get_pgs_by_osd(cct, pool_id, &primaries_by_osd);
+  pgs_by_osd = get_pgs_by_osd(cct, pool_id, &prim_pgs_by_osd, &acting_prims_by_osd);
 
   ldout(cct,30) << __func__ << " Primaries for pool: "
-		<< primaries_by_osd << dendl;
-  for (auto& [osd,pgs] : primaries_by_osd) {
-    ldout(cct,20) << __func__ << " OSD." << osd
+		<< prim_pgs_by_osd << dendl;
+  for (auto& [osd,pgs] : prim_pgs_by_osd) {
+    ldout(cct,20) << __func__ << " Pool " << pool_id << " OSD." << osd
                   << " has " << pgs.size() << " primary PGs" << dendl;
   }
 
@@ -5575,6 +5584,7 @@ float OSDMap::calc_wl_balance_score(CephContext *cct, int64_t pool_id,
 
   float avg_prims_per_osd = (float)num_pgs / (float)num_osds;
   uint64_t max_prims_per_osd = 0;
+  uint64_t max_acting_prims_per_osd = 0;
   //
   //FIXME: This is a first cut - to be improved in future versions by looking
   //       at the OSD weights. (look at crush weight as well)
@@ -5583,52 +5593,76 @@ float OSDMap::calc_wl_balance_score(CephContext *cct, int64_t pool_id,
   float total_osd_weight = 0.;
   float total_weighted_prim_affinity = 0.;
 
-  map<int,float> osds_weight;
+  map<int,float> osds_crush_weight;
   // Set up the OSDMap
   OSDMap tmp_osd_map;
   tmp_osd_map.deepish_copy_from(*this);
-  get_osds_weight(cct, tmp_osd_map, pool_id, osds_weight);
+  int ruleno = pools.at(pool_id).get_crush_rule();
+  tmp_osd_map.crush->get_rule_weight_osd_map(ruleno, &osds_crush_weight);
+  ldout(cct,20) << __func__ << " pool " << pool_id
+                << " ruleno " << ruleno
+                << " weight-map " << osds_crush_weight
+                << dendl;
+  for (auto [osd, oweight] : osds_crush_weight) {
+    total_osd_weight += oweight;
+    if (osds_crush_weight.count(osd)) {
+      total_weighted_prim_affinity += osds_crush_weight.at(osd) * get_primary_affinityf(osd);
+    }
+  }	
+  ldout(cct,30) << __func__ << " pool " << pool_id  	
+		<< " total_osd_weight " << total_osd_weight
+		<< " total_weighted_prim_affinity " << total_weighted_prim_affinity
+		<< dendl;
 
   for (auto &[osd, _] : pgs_by_osd) {
-    uint64_t num_primaries_per_osd = primaries_by_osd.count(osd);
-    if (num_primaries_per_osd > max_prims_per_osd)
-      max_prims_per_osd = num_primaries_per_osd;
+    uint64_t num_primaries_per_osd = 0;
+    uint64_t num_acting_prims_per_osd = 0;
+    if (prim_pgs_by_osd.count(osd)) {
+      num_primaries_per_osd = prim_pgs_by_osd.at(osd).size();
+      if (num_primaries_per_osd > max_prims_per_osd)
+        max_prims_per_osd = num_primaries_per_osd;
+    }
+    if (acting_prims_by_osd.count(osd)) {
+      num_acting_prims_per_osd = acting_prims_by_osd.at(osd).size();
+      if (num_acting_prims_per_osd > max_acting_prims_per_osd)
+	max_acting_prims_per_osd = num_acting_prims_per_osd;
+    }
     auto osd_prim_affinity = get_primary_affinityf(osd);
     prim_affinity_sum += osd_prim_affinity;
-    float osd_weight = 0.;
-    if (osds_weight.count(osd)) {
-      osd_weight = osds_weight.at(osd);
-      total_osd_weight += osd_weight;
-      total_weighted_prim_affinity += osd_weight * osd_prim_affinity;
-    }
+    float osd_weight = osds_crush_weight.count(osd) ? osds_crush_weight.at(osd) : 0.;
+
     ldout(cct,30) << __func__ << " OSD." << osd << " info: "
+		  << " num_primaries " << num_primaries_per_osd
+		  << " num_acting_prims " << num_acting_prims_per_osd
 		  << " prim_affinity " << osd_prim_affinity
 		  << " weight " << osd_weight
-		  << " total_osd_weight " << total_osd_weight
-		  << " total_weighted_prim_affinity " << total_weighted_prim_affinity
 		  << dendl;
   }
 
-  float raw_score = (float)max_prims_per_osd / avg_prims_per_osd; // >=1
-  float prim_affinity_avg = prim_affinity_sum / (float)num_osds;  // in [0..1]
-  float optimal_score = 1. / prim_affinity_avg; 		  // >= 1
+  wl_balance_info_t temp_wbi;
+  if (p_wlbmi == nullptr) 
+    p_wlbmi = &temp_wbi;  // just make sure we have a valid pointer since
+                                  // we do calculations that eventually influence
+				  // the return code of this function.
+  p_wlbmi->primary_affinity_avg = prim_affinity_sum / (float)num_osds;  // in [0..1]
+  p_wlbmi->primary_affinity_weighted = total_weighted_prim_affinity;
+  p_wlbmi->primary_affinity_w_avg = // weighted_prim_affinity_avg
+    p_wlbmi->primary_affinity_weighted / total_osd_weight; // in [0..1]
+  p_wlbmi->raw_score = (float)max_prims_per_osd / avg_prims_per_osd; // >=1
+  p_wlbmi->acting_raw_score = (float)max_acting_prims_per_osd / avg_prims_per_osd;
+  p_wlbmi->optimal_score = 1. / p_wlbmi->primary_affinity_avg;
   // adjust the score to the primary affinity setting (if prim affinity is set
   // the raw score can't be 1 and the optimal (perfect) score is hifgher than 1)
-  float adjusted_score = raw_score / optimal_score;	  	  // >= 1
-
-  if (p_wlb_more_info != nullptr) {
-    // fill in the wlb_more_info structure (if provided)
-    p_wlb_more_info->primary_affinity_avg = prim_affinity_avg;
-    p_wlb_more_info->raw_score = raw_score;
-    p_wlb_more_info->optimal_score = optimal_score;
-    p_wlb_more_info->adjusted_score = adjusted_score;
-  }
+  p_wlbmi->adjusted_score = p_wlbmi->raw_score / p_wlbmi->optimal_score; // >= 1
+  p_wlbmi->acting_adj_score = p_wlbmi->acting_raw_score / p_wlbmi->optimal_score; // >= 1
 
   ldout(cct,20) << __func__ << " pool " << get_pool_name(pool_id)
-		<< " raw_score: " << raw_score << dendl;
+		<< " raw_score: " << p_wlbmi->raw_score 
+		<< " acting_raw_score: " << p_wlbmi->acting_raw_score
+		<< dendl;
   ldout(cct,10) << __func__ << " pool " << get_pool_name(pool_id)
-		<< " wl_score: " << adjusted_score << dendl;
-  return adjusted_score;
+		<< " wl_score: " << p_wlbmi->acting_adj_score << dendl;
+  return p_wlbmi->acting_adj_score;
 }
 
 int OSDMap::get_osds_by_bucket_name(const string &name, set<int> *osds) const
