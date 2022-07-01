@@ -4777,6 +4777,21 @@ int OSDMap::calc_workload_balancer(
   int64_t pid,
   OSDMap::Incremental *pending_inc)
 {
+  /*
+  Do this one
+
+    Go over all pgs; give each a score (how much the primary is more than we wanted  for that OSD (desired distribution))
+
+    If number is larger than 1, we want to change it.
+
+    Does changing it reduce it more than 1?
+
+
+    We stop the loop when all the scores of the PG are lower than 1.
+
+
+    +5 might be good on larger systems; not +1
+  */
 
   // Get a copy of the osdmap
   OSDMap tmp_osd_map;
@@ -4785,19 +4800,26 @@ int OSDMap::calc_workload_balancer(
   // Get pgs by osd (map of osd -> pgs)
   // Get primaries by osd (map of osd -> primary)
   map<uint64_t,set<pg_t>> pgs_by_osd;
-  map<uint64_t, set<pg_t>> *primaries_by_osd;
-  get_pgs_by_osd(cct, pid, pgs_by_osd, primaries_by_osd);
+  map<uint64_t,set<pg_t>> prim_pgs_by_osd;
+  map<uint64_t,set<pg_t>> acting_prims_by_osd;
+  pgs_by_osd = get_pgs_by_osd(cct, pid, &prim_pgs_by_osd, &acting_prims_by_osd);
+
+  // TODO: remove after testing; this is just here for debugging.
+  for (auto [osd, pgs] : acting_prims_by_osd) {
+    ldout(cct, 10) << __func__ << " osd." << osd << " number of prims before " << pgs.size() << dendl;
+  }
+  /////////
 
   // Transfer pgs into a set, `pgs_to_swap`.
   // Transfer osds into a set, `osds_to_check`.
   // This is to avoid poor runtime when we loop through the pgs and to set up
   // our call to calc_desired_primary_distribution.
-  set<pg_t> pgs_to_swap;
+  set<pg_t> prim_pgs_to_check;
   vector<uint64_t> osds_to_check;
-  for (auto [osd, pgs] : pgs_by_osd) {
+  for (auto [osd, pgs] : acting_prims_by_osd) {
     osds_to_check.push_back(osd);
     for (auto pg : pgs) {
-      pgs_to_swap.insert(pg);
+      prim_pgs_to_check.insert(pg);
     }
   }
 
@@ -4805,42 +4827,50 @@ int OSDMap::calc_workload_balancer(
   map<uint64_t,float> desired_prim_dist = calc_desired_primary_distribution(cct, pid, osds_to_check);
 
   // calculate the primary distributuion score for each osd
-  // TODO: Ideally this should be sorted. We may need to create a separate class for this.
-  map<uint64_t,float> prim_dist_score;
+  // TODO: Ideally, prim_dist_score should be sorted so we always know which score is currently best.
+  // We may need to create a separate class for this.
+  map<uint64_t,float> prim_dist_scores;
   float actual;
   float desired;
   for (auto osd : osds_to_check) {
-    actual = (*primaries_by_osd)[osd].size();
+    actual = acting_prims_by_osd[osd].size(); // TODO: eventually change this to prim_pgs_per_pg; acting is just for testing.
     desired = desired_prim_dist[osd];
-    prim_dist_score[osd] = actual - desired;
+    prim_dist_scores[osd] = actual - desired;
   }
 
   // get ready to swap pgs
-  int num_changes = 0; // Josh says this should be inside the while loop; not sure about that if we want to return the value at the end.
+  int result = 0;
   while (true) {
+    int num_changes = 0;
     vector<int> up_osds;
     vector<int> acting_osds;
     int up_primary, acting_primary;
-    for (auto pg : pgs_to_swap) {
+    for (auto pg : prim_pgs_to_check) {
       // fill in the up, up primary, acting, and acting primary for the current PG
       tmp_osd_map.pg_to_up_acting_osds(pg, &up_osds, &up_primary,
 	  &acting_osds, &acting_primary);
       // TODO: we are using the acting primary right now for testing, but eventually we will want the up primary.
-      // find the OSD that would make the best swap.
-      uint64_t better_osd = acting_primary;
-      for (auto [osd, curr_score] : prim_dist_score) {
-	if ((prim_dist_score[acting_primary] > 1) && // the primary score is larger than ideal
-	    ((prim_dist_score[acting_primary] - curr_score) > 1) && // the primary score is over the current score we are considering by at least 1 PG
-	    (curr_score < prim_dist_score[better_osd]) && // the current score we are considering is lower than the last recorded best score
-	    (desired_prim_dist[osd] > 0)) // the OSD we are considering is not off limits (the primary affinity is above 0)
+      
+      // find the OSD that would make the best swap based on its score
+      // We start by first testing the OSD that is currently primary for the PG we are checking.
+      uint64_t curr_best_osd = acting_primary;
+      float curr_best_score = prim_dist_scores[acting_primary];
+      for (auto [potential_osd, potential_score] : prim_dist_scores) {
+	if ((curr_best_score > 1) && // the current score is larger than what we'd ideally prefer, which is a score <= 1
+	    ((curr_best_score - potential_score) > 1) && // the current score is over the potental score by at least 1 PG
+	    (desired_prim_dist[potential_osd] > 0) && // the OSD we are considering is not off limits (the primary affinity is above 0)
+	    ((potential_score + 1) <= 1)) // adding 1 more pg to the OSD we are considering would not make its score worse
 	{
-	  better_osd = osd;
+	  curr_best_osd = potential_osd;
+	  curr_best_score = potential_score;
 	}
       }
-      // make the swap if the balancer has chosen a new primary
-      if (better_osd != acting_primary) {
-	pending_inc->new_primary_temp[pg] = acting_osds[better_osd];
-	prim_dist_score[better_osd] += 1; // update the new prim_dist_score
+      // make the swap only if the balancer has chosen a new primary
+      if ((int)curr_best_osd != acting_primary) {
+	pending_inc->new_primary_temp[pg] = curr_best_osd;
+	(*tmp_osd_map.primary_temp)[pg] = curr_best_osd; // TODO: for testing; changing it on the temporary osd map to later print the distributions
+	prim_dist_scores[curr_best_osd] += 1; // update the new prim_dist_score
+	prim_dist_scores[acting_primary] -= 1; // decrease the score of the previous acting primary since we've removed a prim PG from it
 	num_changes++;
       }
       ldout(cct, 20) << __func__ << " num_changes: " << num_changes << dendl;
@@ -4850,8 +4880,21 @@ int OSDMap::calc_workload_balancer(
       ldout(cct, 20) << __func__ << " num_changes is 0; no further optimizations can be made." << dendl;
       break;
     }
+    result = num_changes;
   }
-  return num_changes;
+
+  // TODO: remove after testing; just here for now to show results.
+  map<uint64_t,set<pg_t>> pgs_by_osd_tmp;
+  map<uint64_t,set<pg_t>> prim_pgs_by_osd_tmp;
+  map<uint64_t,set<pg_t>> acting_prims_by_osd_tmp;
+  pgs_by_osd_tmp = tmp_osd_map.get_pgs_by_osd(cct, pid, &prim_pgs_by_osd_tmp, &acting_prims_by_osd_tmp);
+  for (auto [osd, pgs] : acting_prims_by_osd_tmp) {
+    ldout(cct, 10) << __func__ << " osd." << osd << " number of prims after " << pgs.size() << dendl;
+  }
+  ////////
+
+  ldout(cct, 10) << __func__ << " result " << result << dendl;
+  return result;
 }
 
 map<uint64_t,float> OSDMap::calc_desired_primary_distribution(
@@ -4867,17 +4910,19 @@ map<uint64_t,float> OSDMap::calc_desired_primary_distribution(
     ldout(cct, 10) << __func__ << " calculating distribution for replicated pool "
                    << get_pool_name(pid) << dendl;
     uint64_t replica_count = pool->get_size();
+    
     map<uint64_t,set<pg_t>> pgs_by_osd;
-    get_pgs_by_osd(cct, pid, pgs_by_osd);
+    pgs_by_osd = get_pgs_by_osd(cct, pid);
+
     // First calculate the distribution using primary affinity and tally up the sum
     float distribution_sum = 0.0;
     for (auto& osd : osds) {
-      float osd_primary_count = (pgs_by_osd[osd].size() / replica_count) * get_primary_affinity(osd);
+      float osd_primary_count = ((float)pgs_by_osd[osd].size() / (float)replica_count) * get_primary_affinityf(osd);
       desired_primary_distribution.insert({osd, osd_primary_count});
       distribution_sum += osd_primary_count;
     }
     // Then, stretch the values
-    float factor = osds.size() / distribution_sum;
+    float factor = (float)pool->get_pg_num() / (float)distribution_sum;
     float distribution_sum_desired = 0.0;
     ceph_assert(factor >= 1.0);
     for (auto [osd, osd_primary_count] : desired_primary_distribution) {
@@ -5221,11 +5266,11 @@ void OSDMap::update_primary_temp(pg_t pgid, int64_t osd) {
   (*primary_temp)[pgid] = osd;
 }
 
-void OSDMap::get_pgs_by_osd(
+map<uint64_t,set<pg_t>> OSDMap::get_pgs_by_osd(
     CephContext *cct,
     int64_t pid,
-    map<uint64_t, set<pg_t>> &pgs_by_osd,
-    map<uint64_t, set<pg_t>> *p_primaries_by_osd) const
+    map<uint64_t, set<pg_t>> *p_primaries_by_osd,
+    map<uint64_t, set<pg_t>> *p_acting_primaries_by_osd) const
 {
   // Set up the OSDMap
   OSDMap tmp_osd_map;
@@ -5235,25 +5280,32 @@ void OSDMap::get_pgs_by_osd(
   const pg_pool_t* pool = get_pg_pool(pid);
 
   // build array of pgs from the pool
-  ldout(cct, 20) << __func__ << " pool->get_pg_num() " << pool->get_pg_num() << dendl;
+  map<uint64_t,set<pg_t>> pgs_by_osd;
   for (unsigned ps = 0; ps < pool->get_pg_num(); ++ps) {
     pg_t pg(ps, pid);
     vector<int> up;
     int primary;
-    tmp_osd_map.pg_to_up_acting_osds(pg, &up, &primary, nullptr, nullptr);
+    int acting_prim;
+    tmp_osd_map.pg_to_up_acting_osds(pg, &up, &primary, nullptr, &acting_prim);
     ldout(cct, 20) << __func__ << " " << pg
                    << " up " << up
-                   << " primary " << primary
-                   << dendl;
+		   << " primary " << primary
+		   << " acting_primary " << acting_prim
+		   << dendl;
     for (auto osd : up) {
       if (osd != CRUSH_ITEM_NONE)
         pgs_by_osd[osd].insert(pg);
     }
     if (p_primaries_by_osd != nullptr) {
       if (primary != CRUSH_ITEM_NONE)
-        (*p_primaries_by_osd)[primary].insert(pg);
+	(*p_primaries_by_osd)[primary].insert(pg);
     }
-  }
+    if (p_acting_primaries_by_osd != nullptr) {
+      if (acting_prim != CRUSH_ITEM_NONE)
+	(*p_acting_primaries_by_osd)[acting_prim].insert(pg);
+    }
+}
+  return pgs_by_osd;
 }
 
 float OSDMap::build_pool_pgs_info (
