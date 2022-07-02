@@ -93,17 +93,6 @@ void print_inc_upmaps(const OSDMap::Incremental& pending_inc, int fd)
     }
     ss << std::endl;
   }
-  string s = ss.str();
-  int r = safe_write(fd, s.c_str(), s.size());
-  if (r < 0) {
-    cerr << "error writing output: " << cpp_strerror(r) << std::endl;
-    exit(1);
-  }
-}
-
-void print_inc_workload(OSDMap::Incremental& pending_inc, int fd)
-{
-  ostringstream ss;
   for (auto& i : pending_inc.new_primary_temp) {
     ss << "ceph osd primary-temp " << i.first << " " << i.second << std::endl;
   }
@@ -442,7 +431,7 @@ int main(int argc, const char **argv)
     OSDMap::clean_temps(g_ceph_context, osdmap, tmpmap, &pending_inc);
   }
   int upmap_fd = STDOUT_FILENO;
-  if (upmap || upmap_cleanup) {
+  if (upmap || upmap_cleanup || workload) {
     if (upmap_file != "-") {
       upmap_fd = ::open(upmap_file.c_str(), O_CREAT|O_WRONLY|O_TRUNC, 0644);
       if (upmap_fd < 0) {
@@ -474,10 +463,8 @@ int main(int argc, const char **argv)
     int num_changes = osdmap.calc_workload_balancer(g_ceph_context, pid, &pending_inc);
 
     if (num_changes > 0) {
-      print_inc_workload(pending_inc, upmap_fd);
+      print_inc_upmaps(pending_inc, upmap_fd);
     }
-    // if save:
-    //    osdmap.apply_incremental(pending_inc);
   }
   if (upmap) {
     cout << "upmap, max-count " << upmap_max
@@ -833,7 +820,7 @@ skip_upmap:
       export_crush.empty() && import_crush.empty() && 
       test_map_pg.empty() && test_map_object.empty() &&
       !test_map_pgs && !test_map_pgs_dump && !test_map_pgs_dump_all &&
-      adjust_crush_weight.empty() && !upmap && !upmap_cleanup) {
+      adjust_crush_weight.empty() && !upmap && !upmap_cleanup && !workload) {
     cerr << me << ": no action specified?" << std::endl;
     usage();
   }
