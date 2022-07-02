@@ -4777,22 +4777,6 @@ int OSDMap::calc_workload_balancer(
   int64_t pid,
   OSDMap::Incremental *pending_inc)
 {
-  /*
-  Do this one
-
-    Go over all pgs; give each a score (how much the primary is more than we wanted  for that OSD (desired distribution))
-
-    If number is larger than 1, we want to change it.
-
-    Does changing it reduce it more than 1?
-
-
-    We stop the loop when all the scores of the PG are lower than 1.
-
-
-    +5 might be good on larger systems; not +1
-  */
-
   // Get a copy of the osdmap
   OSDMap tmp_osd_map;
   tmp_osd_map.deepish_copy_from(*this);
@@ -4804,11 +4788,11 @@ int OSDMap::calc_workload_balancer(
   map<uint64_t,set<pg_t>> acting_prims_by_osd;
   pgs_by_osd = get_pgs_by_osd(cct, pid, &prim_pgs_by_osd, &acting_prims_by_osd);
 
-  // TODO: remove after testing; this is just here for debugging.
+  //-------------- TODO: remove after testing; this is just here for debugging. -------------------
   for (auto [osd, pgs] : acting_prims_by_osd) {
     ldout(cct, 10) << __func__ << " osd." << osd << " number of prims before " << pgs.size() << dendl;
   }
-  /////////
+  //------------------------------------------------------------------------------------------------
 
   // Transfer pgs into a set, `pgs_to_swap`.
   // Transfer osds into a set, `osds_to_check`.
@@ -4883,7 +4867,7 @@ int OSDMap::calc_workload_balancer(
     result = num_changes;
   }
 
-  // TODO: remove after testing; just here for now to show results.
+  //------------TODO: remove after testing; just here for now to show results.---------------------
   map<uint64_t,set<pg_t>> pgs_by_osd_tmp;
   map<uint64_t,set<pg_t>> prim_pgs_by_osd_tmp;
   map<uint64_t,set<pg_t>> acting_prims_by_osd_tmp;
@@ -4891,7 +4875,7 @@ int OSDMap::calc_workload_balancer(
   for (auto [osd, pgs] : acting_prims_by_osd_tmp) {
     ldout(cct, 10) << __func__ << " osd." << osd << " number of prims after " << pgs.size() << dendl;
   }
-  ////////
+  //-----------------------------------------------------------------------------------------------
 
   ldout(cct, 10) << __func__ << " result " << result << dendl;
   return result;
