@@ -468,49 +468,68 @@ class Module(MgrModule):
 
     def get_heap_stats(self) -> Dict[str, dict]:
         # Initialize result dict
-        result: Dict[str, dict] = defaultdict(lambda: defaultdict(int))
+        result: Dict[str, dict] = defaultdict(lambda: defaultdict(lambda: defaultdict(int)))
 
-        # Get list of osd ids from the metadata
-        osd_metadata = self.get('osd_metadata')
+        # Get available services
+        service_map = self.get('service_map')
 
-        # Grab output from the "osd.x heap stats" command
-        for osd_id in osd_metadata:
-            cmd_dict = {
-                'prefix': 'heap',
-                'heapcmd': 'stats',
-                'id': str(osd_id),
-            }
-            r, outb, outs = self.osd_command(cmd_dict)
-            if r != 0:
-                self.log.debug("Invalid command dictionary.")
-                continue
-            else:
-                if 'tcmalloc heap stats' in outs:
-                    values = [int(i) for i in outs.split() if i.isdigit()]
-                    # `categories` must be ordered this way for the correct output to be parsed
-                    categories = ['use_by_application',
-                                  'page_heap_freelist',
-                                  'central_cache_freelist',
-                                  'transfer_cache_freelist',
-                                  'thread_cache_freelists',
-                                  'malloc_metadata',
-                                  'actual_memory_used',
-                                  'released_to_os',
-                                  'virtual_address_space_used',
-                                  'spans_in_use',
-                                  'thread_heaps_in_use',
-                                  'tcmalloc_page_size']
-                    if len(values) != len(categories):
-                        self.log.debug('Received unexpected output from osd.{}; number of values should match the number of expected categories:\n' \
-                                'values: len={} {} ~ categories: len={} {} ~ outs: {}'.format(osd_id, len(values), values, len(categories), categories, outs))
+        # Grab output from the "daemon.x heap stats" command
+        for service_type in service_map['services']:
+            for service_id in service_map['services'][service_type]['daemons']:
+                if service_id != 'summary':
+                    service_heap_stats = self.parse_heap_stats(service_type, service_id)
+                    if service_heap_stats:
+                        # TODO: anonymize mon/mgr/mds daemons
+                        result[service_type][service_type+'.'+str(service_id)] = service_heap_stats
+                    else:
+                        # If we aren't able to collect heap stats for a service, an empty dict is returned.
+                        # This scenario is logged in `parse_heap_stats()`.
                         continue
-                    osd = 'osd.' + str(osd_id)
-                    result[osd] = dict(zip(categories, values))
                 else:
-                    self.log.debug('No heap stats available on osd.{}: {}'.format(osd_id, outs))
                     continue
-
         return result
+
+    def parse_heap_stats(self, service_type: str, service_id: Any) -> Dict[str, dict]:
+        parsed_output: Dict[str, dict] = defaultdict(lambda: defaultdict(int))
+
+        cmd_dict = {
+            'prefix': 'heap',
+            'heapcmd': 'stats',
+        }
+        try:
+            r, outb, outs = self.tell_command(service_type, str(service_id), cmd_dict)
+        except:
+            return {}
+
+        if r != 0:
+            self.log.debug("Invalid command dictionary.")
+        else:
+            if 'tcmalloc heap stats' in outs:
+                values = [int(i) for i in outs.split() if i.isdigit()]
+                # `categories` must be ordered this way for the correct output to be parsed
+                categories = ['use_by_application',
+                              'page_heap_freelist',
+                              'central_cache_freelist',
+                              'transfer_cache_freelist',
+                              'thread_cache_freelists',
+                              'malloc_metadata',
+                              'actual_memory_used',
+                              'released_to_os',
+                              'virtual_address_space_used',
+                              'spans_in_use',
+                              'thread_heaps_in_use',
+                              'tcmalloc_page_size']
+                if len(values) != len(categories):
+                    self.log.debug('Received unexpected output from {}.{}; ' \
+                                   'number of values should match the number' \
+                                   'of expected categories:\n values: len={} {} '\
+                                   '~ categories: len={} {} ~ outs: {}'.format(service_type, service_id, len(values), values, len(categories), categories, outs))
+                else:
+                    parsed_output = dict(zip(categories, values))
+            else:
+                self.log.debug('No heap stats available on {}.{}: {}'.format(service_type, service_id, outs))
+        
+        return parsed_output
 
     def get_mempool(self, mode: str = 'separated') -> Dict[str, dict]:
         # Initialize result dict
