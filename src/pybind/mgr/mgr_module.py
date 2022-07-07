@@ -1659,8 +1659,8 @@ class MgrModule(ceph_module.BaseMgrModule, MgrModuleLoggingMixin):
         r = result.wait()
         t2 = time.time()
 
-        self.log.debug("tell_command: '{0}' -> {1} in {2:.3f}s".format(
-            cmd_dict['prefix'], r[0], t2 - t1
+        self.log.debug("tell_command on {0}.{1}: '{2}' -> {3} in {4:.5f}s".format(
+            service_type, service_id, cmd_dict['prefix'], r[0], t2 - t1
         ))
 
         return r
