@@ -501,9 +501,11 @@ class Module(MgrModule):
     def parse_heap_stats(self, service_type: str, service_id: Any) -> Dict[str, dict]:
         parsed_output: Dict[str, dict] = defaultdict(lambda: defaultdict(int))
 
+        self.log.debug("parse_heap_stats for {}.{}".format(service_type, service_id))
+
         cmd_dict = {
             'prefix': 'heap',
-            'heapcmd': 'stats',
+            'heapcmd': 'stats'
         }
 
         try:
@@ -543,37 +545,51 @@ class Module(MgrModule):
 
     def get_mempool(self, mode: str = 'separated') -> Dict[str, dict]:
         # Initialize result dict
-        result: Dict[str, dict] = defaultdict(lambda: defaultdict(int))
+        result: Dict[str, dict] = defaultdict(lambda: defaultdict(lambda: defaultdict(int)))
 
-        # Get list of osd ids from the metadata
-        osd_metadata = self.get('osd_metadata')
+        # Gather all mons, mds, and osds
+        osd_map = self.get('osd_map')
+        mon_map = self.get('mon_map')
+        mds_metadata = self.get('mds_metadata')
+
+        # Combine available daemons
+        service_map: Dict[str, list] = defaultdict(list)
+        for osd in osd_map['osds']:
+            service_map['osd'].append(osd['osd'])
+        for mon in mon_map['mons']:
+            # TODO: anonymize mon name
+            service_map['mon'].append(mon['name'])
+        for mds_name in mds_metadata:
+            # TODO: anonymize mds name?
+            service_map['mds'].append(mds_name)
 
         # Grab output from the "osd.x dump_mempools" command
-        for osd_id in osd_metadata:
-            cmd_dict = {
-                'prefix': 'dump_mempools',
-                'id': str(osd_id),
-                'format': 'json'
-            }
-            r, outb, outs = self.osd_command(cmd_dict)
-            if r != 0:
-                self.log.debug("Invalid command dictionary.")
-                continue
-            else:
-                try:
-                    # This is where the mempool will land.
-                    dump = json.loads(outb)
-                    if mode == 'separated':
-                        result["osd." + str(osd_id)] = dump['mempool']['by_pool']
-                    elif mode == 'aggregated':
-                        for mem_type in dump['mempool']['by_pool']:
-                            result[mem_type]['bytes'] += dump['mempool']['by_pool'][mem_type]['bytes']
-                            result[mem_type]['items'] += dump['mempool']['by_pool'][mem_type]['items']
-                    else:
-                        self.log.debug("Incorrect mode specified in get_mempool")
-                except (json.decoder.JSONDecodeError, KeyError) as e:
-                    self.log.debug("Error caught on osd.{}: {}".format(osd_id, e))
+        for service_type in service_map:
+            for service_id in service_map[service_type]:
+                cmd_dict = {
+                    'prefix': 'dump_mempools',
+                    'format': 'json'
+                }
+                r, outb, outs = self.tell_command(service_type, str(service_id), cmd_dict)
+                if r != 0:
+                    self.log.debug("Invalid command dictionary.")
                     continue
+                else:
+                    try:
+                        # This is where the mempool will land.
+                        dump = json.loads(outb)
+                        if mode == 'separated':
+                            result[service_type][service_type + "." + str(service_id)] = dump['mempool']['by_pool']
+                        elif mode == 'aggregated':
+                            # TODO: fix this mode
+                            for mem_type in dump['mempool']['by_pool']:
+                                result[mem_type]['bytes'] += dump['mempool']['by_pool'][mem_type]['bytes']
+                                result[mem_type]['items'] += dump['mempool']['by_pool'][mem_type]['items']
+                        else:
+                            self.log.debug("Incorrect mode specified in get_mempool")
+                    except (json.decoder.JSONDecodeError, KeyError) as e:
+                        self.log.debug("Error caught on {}.{}: {}".format(service_type, service_id, e))
+                        continue
 
         return result
 
