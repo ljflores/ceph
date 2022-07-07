@@ -470,22 +470,31 @@ class Module(MgrModule):
         # Initialize result dict
         result: Dict[str, dict] = defaultdict(lambda: defaultdict(lambda: defaultdict(int)))
 
-        # Get available services
-        service_map = self.get('service_map')
+        # Gather all mons, mds, and osds
+        osd_map = self.get('osd_map')
+        mon_map = self.get('mon_map')
+        mds_metadata = self.get('mds_metadata')
+
+        # Combine available daemons
+        service_map: Dict[str, list] = defaultdict(list)
+        for osd in osd_map['osds']:
+            service_map['osd'].append(osd['osd'])
+        for mon in mon_map['mons']:
+            # TODO: anonymize mon name
+            service_map['mon'].append(mon['name'])
+        for mds_name in mds_metadata:
+            # TODO: anonymize mds name?
+            service_map['mds'].append(mds_name)
 
         # Grab output from the "daemon.x heap stats" command
-        for service_type in service_map['services']:
-            for service_id in service_map['services'][service_type]['daemons']:
-                if service_id != 'summary':
-                    service_heap_stats = self.parse_heap_stats(service_type, service_id)
-                    if service_heap_stats:
-                        # TODO: anonymize mon/mgr/mds daemons
-                        result[service_type][service_type+'.'+str(service_id)] = service_heap_stats
-                    else:
-                        # If we aren't able to collect heap stats for a service, an empty dict is returned.
-                        # This scenario is logged in `parse_heap_stats()`.
-                        continue
+        for service_type in service_map:
+            for service_id in service_map[service_type]:
+                service_heap_stats = self.parse_heap_stats(service_type, service_id)
+                if service_heap_stats:
+                    result[service_type][service_type+'.'+str(service_id)] = service_heap_stats
                 else:
+                    # If we aren't able to collect heap stats for a service, an empty dict is returned.
+                    # This scenario is logged in `parse_heap_stats()`.
                     continue
         return result
 
@@ -496,6 +505,7 @@ class Module(MgrModule):
             'prefix': 'heap',
             'heapcmd': 'stats',
         }
+
         try:
             r, outb, outs = self.tell_command(service_type, str(service_id), cmd_dict)
         except:
