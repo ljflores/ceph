@@ -4788,12 +4788,6 @@ int OSDMap::calc_workload_balancer(
   map<uint64_t,set<pg_t>> acting_prims_by_osd;
   pgs_by_osd = get_pgs_by_osd(cct, pid, &prim_pgs_by_osd, &acting_prims_by_osd);
 
-  //-------------- TODO: remove after testing; this is just here for debugging. -------------------
-  for (auto [osd, pgs] : acting_prims_by_osd) {
-    ldout(cct, 10) << __func__ << " osd." << osd << " number of prims before " << pgs.size() << dendl;
-  }
-  //------------------------------------------------------------------------------------------------
-
   // Transfer pgs into a set, `pgs_to_swap`.
   // Transfer osds into a set, `osds_to_check`.
   // This is to avoid poor runtime when we loop through the pgs and to set up
@@ -4820,12 +4814,22 @@ int OSDMap::calc_workload_balancer(
     actual = acting_prims_by_osd[osd].size(); // TODO: eventually change this to prim_pgs_per_pg; acting is just for testing.
     desired = desired_prim_dist[osd];
     prim_dist_scores[osd] = actual - desired;
+    ldout(cct, 10) << __func__ << " desired distribution for osd." << osd << " " << desired << dendl;
   }
 
+  //-------------- TODO: remove after testing; this is just here for debugging. -------------------
+  ldout(cct, 10) << " " << dendl;
+  ldout(cct, 10) << "---------- BEFORE ------------ " << dendl;
+  for (auto [osd, pgs] : acting_prims_by_osd) {
+    ldout(cct, 10) << __func__ << " osd." << osd << " number of prims " << pgs.size() << " score " << prim_dist_scores[osd] << dendl;
+  }
+  ldout(cct, 10) << " " << dendl;
+  //------------------------------------------------------------------------------------------------
+
   // get ready to swap pgs
-  int result = 0;
+  int num_changes = 0;
   while (true) {
-    int num_changes = 0;
+    int curr_num_changes = 0;
     vector<int> up_osds;
     vector<int> acting_osds;
     int up_primary, acting_primary;
@@ -4855,16 +4859,16 @@ int OSDMap::calc_workload_balancer(
 	(*tmp_osd_map.primary_temp)[pg] = curr_best_osd; // TODO: for testing; changing it on the temporary osd map to later print the distributions
 	prim_dist_scores[curr_best_osd] += 1; // update the new prim_dist_score
 	prim_dist_scores[acting_primary] -= 1; // decrease the score of the previous acting primary since we've removed a prim PG from it
-	num_changes++;
+	curr_num_changes++;
       }
-      ldout(cct, 20) << __func__ << " num_changes: " << num_changes << dendl;
+      ldout(cct, 20) << __func__ << " curr_num_changes: " << curr_num_changes << dendl;
     }
     // If there are no changes after one pass through the pgs, then no further optimizations can be made.
-    if (num_changes == 0) {
-      ldout(cct, 20) << __func__ << " num_changes is 0; no further optimizations can be made." << dendl;
+    if (curr_num_changes == 0) {
+      ldout(cct, 20) << __func__ << " curr_num_changes is 0; no further optimizations can be made." << dendl;
       break;
     }
-    result = num_changes;
+    num_changes = curr_num_changes;
   }
 
   //------------TODO: remove after testing; just here for now to show results.---------------------
@@ -4872,13 +4876,16 @@ int OSDMap::calc_workload_balancer(
   map<uint64_t,set<pg_t>> prim_pgs_by_osd_tmp;
   map<uint64_t,set<pg_t>> acting_prims_by_osd_tmp;
   pgs_by_osd_tmp = tmp_osd_map.get_pgs_by_osd(cct, pid, &prim_pgs_by_osd_tmp, &acting_prims_by_osd_tmp);
+  ldout(cct, 10) << " " << dendl;
+  ldout(cct, 10) << "---------- AFTER ------------ " << dendl;
   for (auto [osd, pgs] : acting_prims_by_osd_tmp) {
-    ldout(cct, 10) << __func__ << " osd." << osd << " number of prims after " << pgs.size() << dendl;
+    ldout(cct, 10) << __func__ << " osd." << osd << " number of prims " << pgs.size() << " score " << prim_dist_scores[osd] << dendl;
   }
+  ldout(cct, 10) << " " << dendl;
   //-----------------------------------------------------------------------------------------------
 
-  ldout(cct, 10) << __func__ << " result " << result << dendl;
-  return result;
+  ldout(cct, 10) << __func__ << " num_changes " << num_changes << dendl;
+  return num_changes;
 }
 
 map<uint64_t,float> OSDMap::calc_desired_primary_distribution(
