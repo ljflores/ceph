@@ -4842,17 +4842,20 @@ int OSDMap::calc_workload_balancer(
       // find the OSD that would make the best swap based on its score
       // We start by first testing the OSD that is currently primary for the PG we are checking.
       uint64_t curr_best_osd = acting_primary;
-      float curr_best_score = prim_dist_scores[acting_primary];
-      for (auto [potential_osd, potential_score] : prim_dist_scores) {
-	if ((curr_best_score > 1) && // the current score is larger than what we'd ideally prefer, which is a score <= 1
-	    ((curr_best_score - potential_score) > 1) && // the current score is over the potental score by at least 1 PG
+      float acting_prim_score = prim_dist_scores[acting_primary];
+      for (auto potential_osd : acting_osds) {
+	float potential_score = prim_dist_scores[potential_osd];
+	if ((acting_prim_score > 1) && // the primary score is larger than what we'd ideally prefer, which is a score <= 1
+	    ((acting_prim_score - potential_score) > 1) && // the current score is over the potental score by at least 1 PG
 	    (desired_prim_dist[potential_osd] > 0) && // the OSD we are considering is not off limits (the primary affinity is above 0)
 	    ((potential_score + 1) <= 1)) // adding 1 more pg to the OSD we are considering would not make its score worse
 	{
 	  curr_best_osd = potential_osd;
-	  curr_best_score = potential_score;
 	}
       }
+
+      // TODO: "nice to have": --agressively option that cheched if the scores are not smaller than -1
+
       // make the swap only if the balancer has chosen a new primary
       if ((int)curr_best_osd != acting_primary) {
 	pending_inc->new_primary_temp[pg] = curr_best_osd;
@@ -4912,7 +4915,7 @@ map<uint64_t,float> OSDMap::calc_desired_primary_distribution(
       desired_primary_distribution.insert({osd, osd_primary_count});
       distribution_sum += osd_primary_count;
     }
-    // Then, stretch the values
+    // Then, stretch the value (necessary when primary affinity is smaller than 1)
     float factor = (float)pool->get_pg_num() / (float)distribution_sum;
     float distribution_sum_desired = 0.0;
     ceph_assert(factor >= 1.0);
