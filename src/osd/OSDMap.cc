@@ -4842,19 +4842,16 @@ int OSDMap::calc_workload_balancer(
       // find the OSD that would make the best swap based on its score
       // We start by first testing the OSD that is currently primary for the PG we are checking.
       uint64_t curr_best_osd = acting_primary;
-      float acting_prim_score = prim_dist_scores[acting_primary];
+      float prim_score = prim_dist_scores[acting_primary];
       for (auto potential_osd : acting_osds) {
 	float potential_score = prim_dist_scores[potential_osd];
-	if ((acting_prim_score >= 1) && // the primary score is larger than what we'd ideally prefer, which is a score < 1
-	    ((acting_prim_score - potential_score) > 1) && // the current score is over the potental score by at least 1 PG
-	    (desired_prim_dist[potential_osd] > 0) && // the OSD we are considering is not off limits (the primary affinity is above 0)
-	    ((potential_score + 1) <= 1)) // adding 1 more pg to the OSD we are considering would not make its score worse
-	{
-	  curr_best_osd = potential_osd;
-	} else if ((potential_score <= -1) && // the potential score is too under
-                   ((acting_prim_score - potential_score) > 1) && // the primary score is over the potental score by at least 1 PG
-                   (desired_prim_dist[potential_osd] > 0) && // the OSD we are considering is not off limits (the primary affinity is above 0)
-                   ((acting_prim_score - 1) >= -1)) // taking 1 pg from the primary would not make its score worse
+	bool prim_overfull = prim_score >= 1;
+	bool potential_score_not_worse = potential_score < 0;
+	bool potential_underfull = potential_score <= -1;
+	bool prim_score_not_worse = prim_score > 0;
+	if (((prim_overfull && potential_score_not_worse) || (potential_underfull && prim_score_not_worse)) &&
+	    ((prim_score - potential_score) > 1) && // the current score is over the potental score by at least 1 PG
+	    (desired_prim_dist[potential_osd] > 0)) // the OSD we are considering is not off limits (the primary affinity is above 0)
 	{
 	  curr_best_osd = potential_osd;
 	}
