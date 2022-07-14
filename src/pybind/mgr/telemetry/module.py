@@ -476,26 +476,27 @@ class Module(MgrModule):
         mds_metadata = self.get('mds_metadata')
 
         # Combine available daemons
-        service_map: Dict[str, list] = defaultdict(list)
+        daemons = []
         for osd in osd_map['osds']:
-            service_map['osd'].append(osd['osd'])
+            daemons.append('osd'+'.'+str(osd['osd']))
         for mon in mon_map['mons']:
-            # TODO: anonymize mon name
-            service_map['mon'].append(mon['name'])
-        for mds_name in mds_metadata:
-            # TODO: anonymize mds name?
-            service_map['mds'].append(mds_name)
+            daemons.append('mon'+'.'+mon['name'])
+        for mds in mds_metadata:
+            daemons.append('mds'+'.'+mds)
 
         # Grab output from the "daemon.x heap stats" command
-        for service_type in service_map:
-            for service_id in service_map[service_type]:
-                service_heap_stats = self.parse_heap_stats(service_type, service_id)
-                if service_heap_stats:
-                    result[service_type][service_type+'.'+str(service_id)] = service_heap_stats
-                else:
-                    # If we aren't able to collect heap stats for a service, an empty dict is returned.
-                    # This scenario is logged in `parse_heap_stats()`.
-                    continue
+        for daemon in daemons:
+            daemon_type, daemon_id = daemon.split('.')
+            heap_stats = self.parse_heap_stats(daemon_type, daemon_id)
+            if heap_stats:
+                if (daemon_type != 'osd'):
+                    # Anonymize mon and mds
+                    daemon = self.anonymize_entity_name(daemon_type+'.'+daemon_id)
+                result[daemon_type][daemon] = heap_stats
+            else:
+                # If we aren't able to collect heap stats for a service, an empty dict is returned.
+                # This scenario is logged in `parse_heap_stats()`.
+                continue
         return result
 
     def parse_heap_stats(self, service_type: str, service_id: Any) -> Dict[str, dict]:
