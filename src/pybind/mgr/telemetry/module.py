@@ -499,10 +499,8 @@ class Module(MgrModule):
                 continue
         return result
 
-    def parse_heap_stats(self, service_type: str, service_id: Any) -> Dict[str, dict]:
+    def parse_heap_stats(self, daemon_type: str, daemon_id: Any) -> Dict[str, dict]:
         parsed_output: Dict[str, dict] = defaultdict(lambda: defaultdict(int))
-
-        self.log.debug("parse_heap_stats for {}.{}".format(service_type, service_id))
 
         cmd_dict = {
             'prefix': 'heap',
@@ -510,7 +508,7 @@ class Module(MgrModule):
         }
 
         try:
-            r, outb, outs = self.tell_command(service_type, str(service_id), cmd_dict)
+            r, outb, outs = self.tell_command(daemon_type, str(daemon_id), cmd_dict)
         except:
             return {}
 
@@ -536,11 +534,11 @@ class Module(MgrModule):
                     self.log.debug('Received unexpected output from {}.{}; ' \
                                    'number of values should match the number' \
                                    'of expected categories:\n values: len={} {} '\
-                                   '~ categories: len={} {} ~ outs: {}'.format(service_type, service_id, len(values), values, len(categories), categories, outs))
+                                   '~ categories: len={} {} ~ outs: {}'.format(daemon_type, daemon_id, len(values), values, len(categories), categories, outs))
                 else:
                     parsed_output = dict(zip(categories, values))
             else:
-                self.log.debug('No heap stats available on {}.{}: {}'.format(service_type, service_id, outs))
+                self.log.debug('No heap stats available on {}.{}: {}'.format(daemon_type, daemon_id, outs))
         
         return parsed_output
 
@@ -554,43 +552,43 @@ class Module(MgrModule):
         mds_metadata = self.get('mds_metadata')
 
         # Combine available daemons
-        service_map: Dict[str, list] = defaultdict(list)
+        daemons = []
         for osd in osd_map['osds']:
-            service_map['osd'].append(osd['osd'])
+            daemons.append('osd'+'.'+str(osd['osd']))
         for mon in mon_map['mons']:
-            # TODO: anonymize mon name
-            service_map['mon'].append(mon['name'])
-        for mds_name in mds_metadata:
-            # TODO: anonymize mds name?
-            service_map['mds'].append(mds_name)
+            daemons.append('mon'+'.'+mon['name'])
+        for mds in mds_metadata:
+            daemons.append('mds'+'.'+mds)
 
         # Grab output from the "osd.x dump_mempools" command
-        for service_type in service_map:
-            for service_id in service_map[service_type]:
-                cmd_dict = {
-                    'prefix': 'dump_mempools',
-                    'format': 'json'
-                }
-                r, outb, outs = self.tell_command(service_type, str(service_id), cmd_dict)
-                if r != 0:
-                    self.log.debug("Invalid command dictionary.")
+        for daemon in daemons:
+            daemon_type, daemon_id = daemon.split('.')
+            cmd_dict = {
+                'prefix': 'dump_mempools',
+                'format': 'json'
+            }
+            r, outb, outs = self.tell_command(daemon_type, daemon_id, cmd_dict)
+            if r != 0:
+                self.log.debug("Invalid command dictionary.")
+                continue
+            else:
+                try:
+                    # This is where the mempool will land.
+                    dump = json.loads(outb)
+                    if mode == 'separated':
+                        # Anonymize mon and mds
+                        if daemon_type != 'osd':
+                            daemon = self.anonymize_entity_name(daemon)
+                        result[daemon_type][daemon] = dump['mempool']['by_pool']
+                    elif mode == 'aggregated':
+                        for mem_type in dump['mempool']['by_pool']:
+                            result[daemon_type][mem_type]['bytes'] += dump['mempool']['by_pool'][mem_type]['bytes']
+                            result[daemon_type][mem_type]['items'] += dump['mempool']['by_pool'][mem_type]['items']
+                    else:
+                        self.log.debug("Incorrect mode specified in get_mempool")
+                except (json.decoder.JSONDecodeError, KeyError) as e:
+                    self.log.debug("Error caught on {}.{}: {}".format(service_type, service_id, e))
                     continue
-                else:
-                    try:
-                        # This is where the mempool will land.
-                        dump = json.loads(outb)
-                        if mode == 'separated':
-                            result[service_type][service_type + "." + str(service_id)] = dump['mempool']['by_pool']
-                        elif mode == 'aggregated':
-                            # TODO: fix this mode
-                            for mem_type in dump['mempool']['by_pool']:
-                                result[mem_type]['bytes'] += dump['mempool']['by_pool'][mem_type]['bytes']
-                                result[mem_type]['items'] += dump['mempool']['by_pool'][mem_type]['items']
-                        else:
-                            self.log.debug("Incorrect mode specified in get_mempool")
-                    except (json.decoder.JSONDecodeError, KeyError) as e:
-                        self.log.debug("Error caught on {}.{}: {}".format(service_type, service_id, e))
-                        continue
 
         return result
 
