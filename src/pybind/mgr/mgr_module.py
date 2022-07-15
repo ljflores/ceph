@@ -1640,7 +1640,7 @@ class MgrModule(ceph_module.BaseMgrModule, MgrModuleLoggingMixin):
 
         return r
 
-    def tell_command(self, service_type: str, service_id: str, cmd_dict: dict, inbuf: Optional[str] = None) -> Tuple[int, str, str]:
+    def tell_command(self, daemon_type: str, daemon_id: str, cmd_dict: dict, inbuf: Optional[str] = None) -> Tuple[int, str, str]:
         """
         Helper for `ceph tell` command execution.
 
@@ -1655,12 +1655,12 @@ class MgrModule(ceph_module.BaseMgrModule, MgrModuleLoggingMixin):
         """
         t1 = time.time()
         result = CommandResult()
-        self.send_command(result, service_type, service_id, json.dumps(cmd_dict), "", inbuf)
+        self.send_command(result, daemon_type, daemon_id, json.dumps(cmd_dict), "", inbuf)
         r = result.wait()
         t2 = time.time()
 
         self.log.debug("tell_command on {0}.{1}: '{2}' -> {3} in {4:.5f}s".format(
-            service_type, service_id, cmd_dict['prefix'], r[0], t2 - t1
+            daemon_type, daemon_id, cmd_dict['prefix'], r[0], t2 - t1
         ))
 
         return r

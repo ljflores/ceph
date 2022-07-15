@@ -587,7 +587,7 @@ class Module(MgrModule):
                     else:
                         self.log.debug("Incorrect mode specified in get_mempool")
                 except (json.decoder.JSONDecodeError, KeyError) as e:
-                    self.log.debug("Error caught on {}.{}: {}".format(service_type, service_id, e))
+                    self.log.debug("Error caught on {}.{}: {}".format(daemon_type, daemon_id, e))
                     continue
 
         return result
