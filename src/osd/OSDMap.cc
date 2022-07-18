@@ -4845,13 +4845,10 @@ int OSDMap::calc_workload_balancer(
       float prim_score = prim_dist_scores[acting_primary];
       for (auto potential_osd : acting_osds) {
 	float potential_score = prim_dist_scores[potential_osd];
-	bool prim_overfull = prim_score >= 1;
-	bool potential_score_not_worse = potential_score < 0;
-	bool potential_underfull = potential_score <= -1;
-	bool prim_score_not_worse = prim_score > 0;
-	if (((prim_overfull && potential_score_not_worse) || (potential_underfull && prim_score_not_worse)) &&
-	    ((prim_score - potential_score) > 1) && // the current score is over the potental score by at least 1 PG
-	    (desired_prim_dist[potential_osd] > 0)) // the OSD we are considering is not off limits (the primary affinity is above 0)
+	if ((prim_score > 0) && // taking 1 pg from the prim would not make its score worse
+	    (potential_score < 0) && // adding 1 pg to the potential would not make its score worse
+	    ((prim_score - potential_score) > 1) && // swapping a pg would not just keep the scores the same
+	    (desired_prim_dist[potential_osd] > 0)) // the potential is not off limits (the primary affinity is above 0)
 	{
 	  curr_best_osd = potential_osd;
 	}
