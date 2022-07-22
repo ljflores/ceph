@@ -25,7 +25,7 @@ tasks:
 - print: "**** done start telemetry before upgrade..."
 - cephadm.shell:
     mon.a:
-      - ceph telemetry show | grep -q 'Telemetry is off' && echo 'Telemetry is off'
+      - ceph config get mgr mgr/telemetry/enabled
 - print: "*** done end telemetry before upgrade..."
 
 - print: "**** done start parallel"
@@ -37,6 +37,6 @@ tasks:
 - print: "**** done start telemetry after upgrade..."
 - cephadm.shell:
     mon.a:
-      - ceph telemetry show | grep -q 'Telemetry is off' && echo 'Telemetry is off'
-      - ceph telemetry collection ls | grep -q 'perf_perf' && echo 'new collection exists'
+      - ceph config get mgr mgr/telemetry/enabled
+      - ceph telemetry collection ls
 - print: "*** done end telemetry after upgrade..."
