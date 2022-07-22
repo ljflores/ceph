@@ -22,8 +22,21 @@ tasks:
       - ceph config set mgr mgr/cephadm/use_repo_digest true --force
 - print: "**** done cephadm.shell ceph config set mgr..."
 
+- print: "**** done start telemetry before upgrade..."
+- cephadm.shell:
+    mon.a:
+      - ceph config get mgr mgr/telemetry/enabled
+- print: "*** done end telemetry before upgrade..."
+
 - print: "**** done start parallel"
 - parallel:
     - workload
     - upgrade-sequence
 - print: "**** done end parallel"
+
+- print: "**** done start telemetry after upgrade..."
+- cephadm.shell:
+    mon.a:
+      - ceph config get mgr mgr/telemetry/enabled
+      - ceph telemetry collection ls
+- print: "*** done end telemetry after upgrade..."
