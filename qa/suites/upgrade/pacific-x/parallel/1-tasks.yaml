@@ -22,6 +22,17 @@ tasks:
       - ceph config set mgr mgr/cephadm/use_repo_digest true --force
 - print: "**** done cephadm.shell ceph config set mgr..."
 
+- print: "**** done start telemetry pacific..."
+- cephadm.shell:
+    mon.a:
+        - ceph config set mgr mgr/telemetry/contact 'ceph-org'
+        - ceph config set mgr mgr/telemetry/description 'upgrade test cluster'
+        - ceph config set mgr mgr/telemetry/channel_ident true
+        - ceph config get mgr mgr/telemetry/last_opt_revision
+        - ceph telemetry show
+        - ceph telemetry show-device
+- print: "**** done end telemetry pacific..."
+
 - print: "**** done start parallel"
 - parallel:
     - upgrade-sequence

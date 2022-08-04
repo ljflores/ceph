@@ -14,3 +14,13 @@ upgrade-sequence:
          - ceph versions | jq -e '.overall | keys' | grep $sha1
    - print: "**** done end upgrade, wait..."
 
+   - print: "**** done start telemetry x..."
+   - cephadm.shell:
+       mon.a:
+           - ceph -s
+           - ceph config get mgr mgr/telemetry/last_opt_revision
+           - ceph telemetry preview
+           - ceph telemetry preview-device
+           - ceph telemetry channel ls
+           - ceph telemetry collection ls
+   - print: "**** done end telemetry x..."
