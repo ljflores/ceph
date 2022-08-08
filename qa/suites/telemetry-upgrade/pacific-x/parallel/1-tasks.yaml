@@ -22,20 +22,15 @@ tasks:
       - ceph config set mgr mgr/cephadm/use_repo_digest true --force
 - print: "**** done cephadm.shell ceph config set mgr..."
 
-- print: "**** done start telemetry pacific..."
-- cephadm.shell:
-    mon.a:
-        - ceph config set mgr mgr/telemetry/contact 'ceph-org'
-        - ceph config set mgr mgr/telemetry/description 'upgrade test cluster'
-        - ceph config set mgr mgr/telemetry/channel_ident true
-        - ceph telemetry on --license sharing-1-0
-        - ceph config get mgr mgr/telemetry/last_opt_revision
-        - ceph telemetry show
-        - ceph telemetry show-device
-- print: "**** done end telemetry pacific..."
-
-- print: "**** done start upgrade sequence..."
 - sequential:
+    - print: "**** done start telemetry pacific"
+    - workunit:
+        branch: pacific
+        clients:
+          client.0:
+              - telemetry_pacific.sh
+    - print: "**** done end telemetry pacific..."
+
     - print: "**** done start upgrade, wait"
     - cephadm.shell:
         env: [sha1]
@@ -49,17 +44,9 @@ tasks:
             - ceph versions | jq -e '.overall | keys' | grep $sha1
     - print: "**** done end upgrade, wait..."
 
-    - print: "**** done start telemetry x..."
-    - cephadm.shell:
-        env: [sha1]
-        mon.a:
-            - ceph -s
-            - ceph config get mgr mgr/telemetry/last_opt_revision
-            - ceph telemetry show
-            - ceph telemetry show-device
-            - ceph telemetry channel ls
-            - ceph telemetry collection ls
-            - ceph -s
-            - ceph telemetry off
+    - print: "**** done start telemetry x"
+    - workunit:
+        clients:
+          client.0:
+              - telemetry_x.sh
     - print: "**** done end telemetry x..."
-- print: "**** done end upgrade, wait"
