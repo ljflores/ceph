@@ -28,6 +28,7 @@ tasks:
         - ceph config set mgr mgr/telemetry/contact 'ceph-org'
         - ceph config set mgr mgr/telemetry/description 'upgrade test cluster'
         - ceph config set mgr mgr/telemetry/channel_ident true
+        - ceph telemetry on --license sharing-1-0
         - ceph config get mgr mgr/telemetry/last_opt_revision
         - ceph telemetry show
         - ceph telemetry show-device
@@ -54,9 +55,11 @@ tasks:
         mon.a:
             - ceph -s
             - ceph config get mgr mgr/telemetry/last_opt_revision
-            - ceph telemetry preview
-            - ceph telemetry preview-device
+            - ceph telemetry show
+            - ceph telemetry show-device
             - ceph telemetry channel ls
             - ceph telemetry collection ls
+            - ceph -s
+            - ceph telemetry off
     - print: "**** done end telemetry x..."
 - print: "**** done end upgrade, wait"
