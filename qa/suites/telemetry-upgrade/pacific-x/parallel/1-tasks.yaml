@@ -28,7 +28,7 @@ tasks:
         branch: pacific
         clients:
           client.0:
-              - telemetry_pacific.sh
+              - mgr/telemetry_pacific.sh
     - print: "**** done end telemetry pacific..."
 
     - print: "**** done start upgrade, wait"
@@ -48,5 +48,5 @@ tasks:
     - workunit:
         clients:
           client.0:
-              - telemetry_x.sh
+              - mgr/telemetry_x.sh
     - print: "**** done end telemetry x..."
