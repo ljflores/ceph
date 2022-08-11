@@ -988,7 +988,7 @@ COMMAND("osd primary-temp "
         "osd", "rw")
 COMMAND("osd rm-primary-temp "
 	"name=pgid,type=CephPgid ",
-        "remove primary_temp mapping pgid (developers only)",
+        "clear primary_temp mapping pgid (developers only)",
         "osd", "rw")
 COMMAND("osd primary-affinity "
 	"name=id,type=CephOsdName "
