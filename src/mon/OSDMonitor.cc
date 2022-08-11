@@ -12045,7 +12045,8 @@ bool OSDMonitor::prepare_command_impl(MonOpRequestRef op,
       new_pg_temp.begin(), new_pg_temp.end());
     ss << "set " << pgid << " pg_temp mapping to " << new_pg_temp;
     goto update;
-  } else if (prefix == "osd primary-temp") {
+  } else if (prefix == "osd primary-temp" ||
+             prefix == "osd rm-primary-temp") {
     string pgidstr;
     if (!cmd_getval(cmdmap, "pgid", pgidstr)) {
       ss << "unable to parse 'pgid' value '"
@@ -12066,16 +12067,24 @@ bool OSDMonitor::prepare_command_impl(MonOpRequestRef op,
     }
 
     int64_t osd;
-    if (!cmd_getval(cmdmap, "id", osd)) {
-      ss << "unable to parse 'id' value '"
-         << cmd_vartype_stringify(cmdmap.at("id")) << "'";
-      err = -EINVAL;
-      goto reply;
+    if (prefix == "osd primary-temp") {
+      if (!cmd_getval(cmdmap, "id", osd)) {
+        ss << "unable to parse 'id' value '"
+           << cmd_vartype_stringify(cmdmap.at("id")) << "'";
+        err = -EINVAL;
+        goto reply;
+      }
+      if (!osdmap.exists(osd)) {
+        ss << "osd." << osd << " does not exist";
+        err = -ENOENT;
+        goto reply;
+      }
     }
-    if (osd != -1 && !osdmap.exists(osd)) {
-      ss << "osd." << osd << " does not exist";
-      err = -ENOENT;
-      goto reply;
+    else if (prefix == "osd rm-primary-temp") {
+      osd = -1;
+    }
+    else {
+      ceph_assert(0 == "Unreachable!");
     }
 
     if (osdmap.require_min_compat_client != ceph_release_t::unknown &&
