@@ -3954,7 +3954,7 @@ void OSDMap::print_pools(ostream& out) const
     if (pni != pool_name.end())
       name = pni->second;
     char wl_score_str[32];
-    if (pdata.get_type() == pg_pool_t::TYPE_REPLICATED)
+    if (pdata.is_replicated())
       snprintf (wl_score_str, sizeof(wl_score_str),
 		" workload_balance_score %.2f",
 		calc_wl_balance_score(g_ceph_context, pid));
@@ -4615,13 +4615,13 @@ int OSDMap::summarize_mapping_stats(
 	  if (osd >= 0 && osd < get_max_osd())
 	    ++new_by_osd[osd];
 	}
-	if (pi->type == pg_pool_t::TYPE_ERASURE) {
+	if (pi->is_erasure()) {
 	  for (unsigned i=0; i<up.size(); ++i) {
 	    if (up[i] != up2[i]) {
 	      ++moved_pg;
 	    }
 	  }
-	} else if (pi->type == pg_pool_t::TYPE_REPLICATED) {
+	} else if (pi->is_replicated()) {
 	  for (int osd : up) {
 	    if (std::find(up2.begin(), up2.end(), osd) == up2.end()) {
 	      ++moved_pg;
