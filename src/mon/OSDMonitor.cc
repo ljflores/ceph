@@ -5513,7 +5513,7 @@ bool OSDMonitor::preprocess_command(MonOpRequestRef op)
 	f->close_section();
 	f->flush(ds);
       } else {
-	p->print(ds);
+	p->print(cct, ds);
       }
       rdata.append(ds);
       if (!f)
@@ -6060,7 +6060,7 @@ bool OSDMonitor::preprocess_command(MonOpRequestRef op)
     cmd_getval(cmdmap, "detail", detail);
     if (!f && detail == "detail") {
       ostringstream ss;
-      osdmap.print_pools(ss);
+      osdmap.print_pools(cct, ss);
       rdata.append(ss.str());
     } else {
       if (f)
@@ -6072,23 +6072,19 @@ bool OSDMonitor::preprocess_command(MonOpRequestRef op)
 	    f->dump_int("pool_id", pid);
 	    f->dump_string("pool_name", osdmap.get_pool_name(pid));
 	    pdata.dump(f.get());
-	    if (pdata.get_type() == pg_pool_t::TYPE_REPLICATED) {
+	    if (pdata.is_replicated()) {
 	      // Add wlb section with values for score, optimal score, raw score
 	      // and primary_affinity average
-	      OSDMap::wl_balance_info_t wlb_info;
-	      f->open_object_section("workload_balance");
-	      f->dump_float("score (acting)",
-	        osdmap.calc_wl_balance_score(g_ceph_context, pid, &wlb_info));
-	      f->dump_float("score (stable)", wlb_info.adjusted_score);
-	      f->dump_float("optimal_score", wlb_info.optimal_score);
-	      f->dump_float("raw_score (acting)", wlb_info.acting_raw_score);
-	      f->dump_float("raw_score (stable)", wlb_info.raw_score);
-	      f->dump_float("primary_affinity_weighted", 
-	        wlb_info.primary_affinity_weighted);
-	      f->dump_float("average_primary_affinity",
-	        wlb_info.primary_affinity_avg);
-	      f->dump_float("average_primary_affinity_weighted",
-	        wlb_info.primary_affinity_w_avg);		
+	      OSDMap::read_balance_info_t rb_info;
+	      f->open_object_section("read_balance");
+	      f->dump_float("score (acting)", osdmap.calc_read_balance_score(cct, pid, &rb_info));
+	      f->dump_float("score (stable)", rb_info.adjusted_score);
+	      f->dump_float("optimal_score", rb_info.optimal_score);
+	      f->dump_float("raw_score (acting)", rb_info.acting_raw_score);
+	      f->dump_float("raw_score (stable)", rb_info.raw_score);
+	      f->dump_float("primary_affinity_weighted", rb_info.primary_affinity_weighted);
+	      f->dump_float("average_primary_affinity", rb_info.primary_affinity_avg);
+	      f->dump_float("average_primary_affinity_weighted", rb_info.primary_affinity_w_avg);
 	      f->close_section();
 	    }
 
@@ -10298,7 +10294,7 @@ bool OSDMonitor::prepare_command_impl(MonOpRequestRef op,
      set<int> osds;
      newcrush.get_devices_by_class(device_class, &osds);
      for (auto& p: osds) {
-       err = newcrush.remove_device_class(g_ceph_context, p, &ss);
+       err = newcrush.remove_device_class(cct, p, &ss);
        if (err < 0) {
          // ss has reason for failure
          goto reply;

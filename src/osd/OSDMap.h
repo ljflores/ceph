@@ -1582,12 +1582,16 @@ public:
       float adjusted_score; 	// based on raw_score and primary_affinity_avg 1 is optimal
       float acting_raw_score;   // based on active_primaries (temporary)
       float acting_adj_score;   // based on raw_active_score and primary_affinity_avg 1 is optimal
-    } wl_balance_info_t;
-
-  float calc_wl_balance_score(
+    } read_balance_info_t;
+  //
+  // This function returns the acting read balance score. When p_rb_more_info is
+  // not NULL, it will be filled with detailed information about the read bbalance
+  // state of the cluster
+  //
+  float calc_read_balance_score(
     CephContext *cct,
     int64_t pool_id,
-    wl_balance_info_t *p_wlb_more_info = nullptr
+    read_balance_info_t *p_rb_more_info = nullptr
   ) const;
 
   int get_osds_by_bucket_name(const std::string &name, std::set<int> *osds) const;
@@ -1657,10 +1661,10 @@ public:
 private:
   void print_osd_line(int cur, std::ostream *out, ceph::Formatter *f) const;
 public:
-  void print(std::ostream& out) const;
+  void print(CephContext *cct, std::ostream& out) const;
   void print_osd(int id, std::ostream& out) const;
   void print_osds(std::ostream& out) const;
-  void print_pools(std::ostream& out) const;
+  void print_pools(CephContext *cct, std::ostream& out) const;
   void print_summary(ceph::Formatter *f, std::ostream& out,
 		     const std::string& prefix, bool extra=false) const;
   void print_oneline_summary(std::ostream& out) const;
