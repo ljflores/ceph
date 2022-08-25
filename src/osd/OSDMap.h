@@ -1584,15 +1584,16 @@ public:
       float acting_adj_score;   // based on raw_active_score and primary_affinity_avg 1 is optimal
     } read_balance_info_t;
   //
-  // This function returns the acting read balance score. When p_rb_more_info is
-  // not NULL, it will be filled with detailed information about the read bbalance
-  // state of the cluster
+  // This function calculates scores about the cluster read balance state
+  // p_rb_info->acting_adj_score is the current read balance score (acting)
+  // p_rb_info->adjusted_score is the stable read balance score 
+  // Return value of 0 is OK, negative means an error (may happen with
+  // some arifically generated osamap files)
   //
-  float calc_read_balance_score(
+  int calc_read_balance_score(
     CephContext *cct,
     int64_t pool_id,
-    read_balance_info_t *p_rb_more_info = nullptr
-  ) const;
+    read_balance_info_t *p_rb_info) const;
 
   int get_osds_by_bucket_name(const std::string &name, std::set<int> *osds) const;
 
@@ -1690,9 +1691,10 @@ public:
   static void dump_erasure_code_profiles(
     const mempool::osdmap::map<std::string,std::map<std::string,std::string> > &profiles,
     ceph::Formatter *f);
-  void dump(ceph::Formatter *f) const;
+  void dump(ceph::Formatter *f, CephContext *cct = nullptr) const;
   void dump_osd(int id, ceph::Formatter *f) const;
   void dump_osds(ceph::Formatter *f) const;
+  void dump_pool(CephContext *cct, int64_t pid, const pg_pool_t &pdata, ceph::Formatter *f) const;
   static void generate_test_instances(std::list<OSDMap*>& o);
   bool check_new_blocklist_entries() const { return new_blocklist_entries; }
 
