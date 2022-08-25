@@ -5350,7 +5350,7 @@ static void dump_cpu_list(Formatter *f, const char *name,
 void OSDMonitor::dump_info(Formatter *f)
 {
   f->open_object_section("osdmap");
-  osdmap.dump(f);
+  osdmap.dump(f, cct);
   f->close_section();
 
   f->open_array_section("osd_metadata");
@@ -5509,7 +5509,7 @@ bool OSDMonitor::preprocess_command(MonOpRequestRef op)
       stringstream ds;
       if (f) {
 	f->open_object_section("osdmap");
-	p->dump(f.get());
+	p->dump(f.get(), cct);
 	f->close_section();
 	f->flush(ds);
       } else {
@@ -6068,27 +6068,7 @@ bool OSDMonitor::preprocess_command(MonOpRequestRef op)
       for (auto &[pid, pdata] : osdmap.get_pools()) {
 	if (f) {
 	  if (detail == "detail") {
-	    f->open_object_section("pool");
-	    f->dump_int("pool_id", pid);
-	    f->dump_string("pool_name", osdmap.get_pool_name(pid));
-	    pdata.dump(f.get());
-	    if (pdata.is_replicated()) {
-	      // Add wlb section with values for score, optimal score, raw score
-	      // and primary_affinity average
-	      OSDMap::read_balance_info_t rb_info;
-	      f->open_object_section("read_balance");
-	      f->dump_float("score (acting)", osdmap.calc_read_balance_score(cct, pid, &rb_info));
-	      f->dump_float("score (stable)", rb_info.adjusted_score);
-	      f->dump_float("optimal_score", rb_info.optimal_score);
-	      f->dump_float("raw_score (acting)", rb_info.acting_raw_score);
-	      f->dump_float("raw_score (stable)", rb_info.raw_score);
-	      f->dump_float("primary_affinity_weighted", rb_info.primary_affinity_weighted);
-	      f->dump_float("average_primary_affinity", rb_info.primary_affinity_avg);
-	      f->dump_float("average_primary_affinity_weighted", rb_info.primary_affinity_w_avg);
-	      f->close_section();
-	    }
-
-	    f->close_section();
+	    osdmap.dump_pool(cct, pid, pdata, f.get());
 	  } else {
 	    f->dump_string("pool_name", osdmap.get_pool_name(pid));
 	  }
