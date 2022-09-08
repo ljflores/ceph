@@ -4788,25 +4788,23 @@ int OSDMap::calc_workload_balancer(
   map<uint64_t,set<pg_t>> acting_prims_by_osd;
   pgs_by_osd = get_pgs_by_osd(cct, pid, &prim_pgs_by_osd, &acting_prims_by_osd);
 
-  // Transfer pgs into a set, `pgs_to_swap`.
+  // Transfer pgs into a map, `pgs_to_check`. This will tell us the total num_changes after all
+  //     calculations have been finalized.
   // Transfer osds into a set, `osds_to_check`.
   // This is to avoid poor runtime when we loop through the pgs and to set up
   // our call to calc_desired_primary_distribution.
-  set<pg_t> prim_pgs_to_check;
+  map<pg_t,bool> prim_pgs_to_check;
   vector<uint64_t> osds_to_check;
   for (auto [osd, pgs] : acting_prims_by_osd) {
     osds_to_check.push_back(osd);
     for (auto pg : pgs) {
-      prim_pgs_to_check.insert(pg);
+      prim_pgs_to_check.insert({pg, false});
     }
   }
 
   // calculate desired primary distribution for each osd
   map<uint64_t,float> desired_prim_dist = calc_desired_primary_distribution(cct, pid, osds_to_check);
 
-  // calculate the primary distributuion score for each osd
-  // TODO: Ideally, prim_dist_score should be sorted so we always know which score is currently best.
-  // We may need to create a separate class for this.
   map<uint64_t,float> prim_dist_scores;
   float actual;
   float desired;
@@ -4827,13 +4825,12 @@ int OSDMap::calc_workload_balancer(
   //------------------------------------------------------------------------------------------------
 
   // get ready to swap pgs
-  int num_changes = 0;
   while (true) {
     int curr_num_changes = 0;
     vector<int> up_osds;
     vector<int> acting_osds;
     int up_primary, acting_primary;
-    for (auto pg : prim_pgs_to_check) {
+    for (auto [pg, mapped] : prim_pgs_to_check) {
       // fill in the up, up primary, acting, and acting primary for the current PG
       tmp_osd_map.pg_to_up_acting_osds(pg, &up_osds, &up_primary,
 	  &acting_osds, &acting_primary);
@@ -4858,10 +4855,15 @@ int OSDMap::calc_workload_balancer(
 
       // make the swap only if the balancer has chosen a new primary
       if ((int)curr_best_osd != acting_primary) {
-	pending_inc->new_primary_temp[pg] = curr_best_osd;
+	// Update prim_dist_scores
+	prim_dist_scores[curr_best_osd] += 1;
+	prim_dist_scores[acting_primary] -= 1;
+
+	// Update the mappings
+	pending_inc->new_primary_temp[pg] = curr_best_osd; // update the mapping
 	(*tmp_osd_map.primary_temp)[pg] = curr_best_osd; // TODO: for testing; changing it on the temporary osd map to later print the distributions
-	prim_dist_scores[curr_best_osd] += 1; // update the new prim_dist_score
-	prim_dist_scores[acting_primary] -= 1; // decrease the score of the previous acting primary since we've removed a prim PG from it
+	prim_pgs_to_check[pg] = true;
+
 	curr_num_changes++;
       }
       ldout(cct, 20) << __func__ << " curr_num_changes: " << curr_num_changes << dendl;
@@ -4871,7 +4873,6 @@ int OSDMap::calc_workload_balancer(
       ldout(cct, 20) << __func__ << " curr_num_changes is 0; no further optimizations can be made." << dendl;
       break;
     }
-    num_changes = curr_num_changes;
   }
 
   //------------TODO: remove after testing; just here for now to show results.---------------------
@@ -4886,6 +4887,13 @@ int OSDMap::calc_workload_balancer(
   }
   ldout(cct, 10) << " " << dendl;
   //-----------------------------------------------------------------------------------------------
+ 
+  int num_changes = 0;
+  for (auto [pg, mapped] : prim_pgs_to_check) {
+    if (mapped) {
+      num_changes++;
+    }
+  }
 
   ldout(cct, 10) << __func__ << " num_changes " << num_changes << dendl;
   return num_changes;
