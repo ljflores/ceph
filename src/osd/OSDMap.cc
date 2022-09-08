@@ -4778,6 +4778,10 @@ int OSDMap::calc_workload_balancer(
   OSDMap::Incremental *pending_inc,
   OSDMap& tmp_osd_map)
 {
+  // Get crush rule for selected pool
+  const pg_pool_t* pool = get_pg_pool(pid);
+  int crush_rule = pool->get_crush_rule();
+
   // Get pgs by osd (map of osd -> pgs)
   // Get primaries by osd (map of osd -> primary)
   map<uint64_t,set<pg_t>> pgs_by_osd;
@@ -4850,8 +4854,12 @@ int OSDMap::calc_workload_balancer(
 
       // make the swap only if:
       //    1. the balancer has chosen a new primary
-      //    2. The swap is legal (TODO)
-      if ((int)curr_best_osd != acting_primary) {
+      //    2. The swap is legal
+      auto legal_swap = crush->verify_upmap(cct,
+                                 crush_rule,
+                                 get_pg_pool_size(pg), // TODO: calculate this value ahead of time
+                                 {(int)curr_best_osd});
+      if (((int)curr_best_osd != acting_primary) && legal_swap) {
 	// Update prim_dist_scores
 	prim_dist_scores[curr_best_osd] += 1;
 	prim_dist_scores[acting_primary] -= 1;
