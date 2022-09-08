@@ -487,6 +487,8 @@ int main(int argc, const char **argv)
       cout << " osd." << osd << " ~ number of prims: " << pgs.size() << " ~ score: " << "<insert score here>\n";
     }
     cout << " \n";
+    cout << "num changes: " << num_changes << "\n";
+    cout << " \n";
 
     if (num_changes > 0) {
       print_inc_upmaps(pending_inc, upmap_fd);
