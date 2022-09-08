@@ -4775,12 +4775,9 @@ bool OSDMap::try_pg_upmap(
 int OSDMap::calc_workload_balancer(
   CephContext *cct,
   int64_t pid,
-  OSDMap::Incremental *pending_inc)
+  OSDMap::Incremental *pending_inc,
+  OSDMap& tmp_osd_map)
 {
-  // Get a copy of the osdmap
-  OSDMap tmp_osd_map;
-  tmp_osd_map.deepish_copy_from(*this);
-
   // Get pgs by osd (map of osd -> pgs)
   // Get primaries by osd (map of osd -> primary)
   map<uint64_t,set<pg_t>> pgs_by_osd;
@@ -4851,9 +4848,9 @@ int OSDMap::calc_workload_balancer(
 	}
       }
 
-      // TODO: "nice to have": --agressively option that cheched if the scores are not smaller than -1
-
-      // make the swap only if the balancer has chosen a new primary
+      // make the swap only if:
+      //    1. the balancer has chosen a new primary
+      //    2. The swap is legal (TODO)
       if ((int)curr_best_osd != acting_primary) {
 	// Update prim_dist_scores
 	prim_dist_scores[curr_best_osd] += 1;
@@ -4876,18 +4873,16 @@ int OSDMap::calc_workload_balancer(
   }
 
   //------------TODO: remove after testing; just here for now to show results.---------------------
-  map<uint64_t,set<pg_t>> pgs_by_osd_tmp;
-  map<uint64_t,set<pg_t>> prim_pgs_by_osd_tmp;
-  map<uint64_t,set<pg_t>> acting_prims_by_osd_tmp;
-  pgs_by_osd_tmp = tmp_osd_map.get_pgs_by_osd(cct, pid, &prim_pgs_by_osd_tmp, &acting_prims_by_osd_tmp);
+  pgs_by_osd = tmp_osd_map.get_pgs_by_osd(cct, pid, &prim_pgs_by_osd, &acting_prims_by_osd);
   ldout(cct, 10) << " " << dendl;
   ldout(cct, 10) << "---------- AFTER ------------ " << dendl;
-  for (auto [osd, pgs] : acting_prims_by_osd_tmp) {
+  for (auto [osd, pgs] : acting_prims_by_osd) {
     ldout(cct, 10) << __func__ << " osd." << osd << " number of prims " << pgs.size() << " score " << prim_dist_scores[osd] << dendl;
   }
   ldout(cct, 10) << " " << dendl;
   //-----------------------------------------------------------------------------------------------
- 
+
+  // Tally total number of changes
   int num_changes = 0;
   for (auto [pg, mapped] : prim_pgs_to_check) {
     if (mapped) {

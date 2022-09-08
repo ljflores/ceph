@@ -459,8 +459,34 @@ int main(int argc, const char **argv)
       cerr << " pool " << workload_pool << " does not exist" << std::endl;
       exit(1);
     }
+
+    OSDMap tmp_osd_map;
+    tmp_osd_map.deepish_copy_from(osdmap);
+
+    // Get pgs by osd (map of osd -> pgs)
+    // Get primaries by osd (map of osd -> primary)
+    map<uint64_t,set<pg_t>> pgs_by_osd;
+    map<uint64_t,set<pg_t>> prim_pgs_by_osd;
+    map<uint64_t,set<pg_t>> acting_prims_by_osd;
+
+    pgs_by_osd = tmp_osd_map.get_pgs_by_osd(g_ceph_context, pid, &prim_pgs_by_osd, &acting_prims_by_osd);
+    cout << " \n";
+    cout << "---------- BEFORE ------------ \n";
+    for (auto [osd, pgs] : acting_prims_by_osd) {
+      cout << " osd." << osd << " ~ number of prims: " << pgs.size() << " ~ score: " << "<insert score here>\n";
+    }
+    cout << " \n";
+
     OSDMap::Incremental pending_inc(osdmap.get_epoch()+1);
-    int num_changes = osdmap.calc_workload_balancer(g_ceph_context, pid, &pending_inc);
+    int num_changes = osdmap.calc_workload_balancer(g_ceph_context, pid, &pending_inc, tmp_osd_map);
+
+    pgs_by_osd = tmp_osd_map.get_pgs_by_osd(g_ceph_context, pid, &prim_pgs_by_osd, &acting_prims_by_osd);
+    cout << " \n";
+    cout << "---------- AFTER ------------ \n";
+    for (auto [osd, pgs] : acting_prims_by_osd) {
+      cout << " osd." << osd << " ~ number of prims: " << pgs.size() << " ~ score: " << "<insert score here>\n";
+    }
+    cout << " \n";
 
     if (num_changes > 0) {
       print_inc_upmaps(pending_inc, upmap_fd);

@@ -1456,7 +1456,8 @@ public:
   int calc_workload_balancer(
     CephContext *cct,
     int64_t pid,
-    Incremental *pending_inc);
+    Incremental *pending_inc,
+    OSDMap& tmp_osd_map);
 
   std::map<uint64_t,float> calc_desired_primary_distribution(
     CephContext *cct,
@@ -1472,14 +1473,14 @@ public:
     std::random_device::result_type *p_seed = nullptr  ///< [optional] for regression tests
     );
 
-private: // Bunch of internal functions used only by calc_pg_upmaps (result of code refactoring)
-
   std::map<uint64_t,std::set<pg_t>> get_pgs_by_osd(
     CephContext *cct,
     int64_t pid,
     std::map<uint64_t, std::set<pg_t>> *p_primaries_by_osd = nullptr,
     std::map<uint64_t, std::set<pg_t>> *p_acting_primaries_by_osd = nullptr
   ) const; // used in calc_desired_primary_distribution()
+
+private: // Bunch of internal functions used only by calc_pg_upmaps (result of code refactoring)
 
   void update_primary_temp(pg_t pgid, int64_t osd); // used for calc_workload_balancer()
 
