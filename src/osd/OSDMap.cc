@@ -5259,10 +5259,6 @@ int OSDMap::calc_pg_upmaps(
   return num_changed;
 }
 
-void OSDMap::update_primary_temp(pg_t pgid, int64_t osd) {
-  (*primary_temp)[pgid] = osd;
-}
-
 map<uint64_t,set<pg_t>> OSDMap::get_pgs_by_osd(
     CephContext *cct,
     int64_t pid,

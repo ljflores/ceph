@@ -1482,8 +1482,6 @@ public:
 
 private: // Bunch of internal functions used only by calc_pg_upmaps (result of code refactoring)
 
-  void update_primary_temp(pg_t pgid, int64_t osd); // used for calc_workload_balancer()
-
   float build_pool_pgs_info (
     CephContext *cct,
     const std::set<int64_t>& pools,        ///< [optional] restrict to pool
