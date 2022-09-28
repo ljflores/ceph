@@ -29,5 +29,8 @@ ceph telemetry show
 ceph telemetry show-device
 ceph telemetry show perf ident
 
+# Opt out
+ceph telemetry off
+
 echo OK
 
