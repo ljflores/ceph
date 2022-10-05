@@ -463,46 +463,48 @@ int main(int argc, const char **argv)
     OSDMap tmp_osd_map;
     tmp_osd_map.deepish_copy_from(osdmap);
 
-    // Get pgs by osd (map of osd -> pgs)
-    // Get primaries by osd (map of osd -> primary)
+    // Gather BEFORE info
     map<uint64_t,set<pg_t>> pgs_by_osd;
     map<uint64_t,set<pg_t>> prim_pgs_by_osd;
     map<uint64_t,set<pg_t>> acting_prims_by_osd;
     pgs_by_osd = tmp_osd_map.get_pgs_by_osd(g_ceph_context, pid, &prim_pgs_by_osd, &acting_prims_by_osd);
-    cout << " \n";
-    cout << "---------- BEFORE ------------ \n";
-    for (auto [osd, pgs] : acting_prims_by_osd) {
-      cout << " osd." << osd << " | primary affinity: " << tmp_osd_map.get_primary_affinityf(osd) << " | number of prims: " << pgs.size() << "\n";
-    }
-    cout << " \n";
-
     OSDMap::read_balance_info_t rb_info;
     tmp_osd_map.calc_read_balance_score(g_ceph_context, pid, &rb_info);
-    cout << "read_balance_score of '" << read_pool << "': " << rb_info.acting_adj_score << "\n";
-    cout << " \n";
+    float read_balance_score_before = rb_info.acting_adj_score;
 
+    // Calculate read balancer
     OSDMap::Incremental pending_inc(osdmap.get_epoch()+1);
     int num_changes = osdmap.calc_workload_balancer(g_ceph_context, pid, &pending_inc, tmp_osd_map);
 
+    // Gather AFTER info
     map<uint64_t,set<pg_t>> pgs_by_osd_2;
     map<uint64_t,set<pg_t>> prim_pgs_by_osd_2;
     map<uint64_t,set<pg_t>> acting_prims_by_osd_2;
     pgs_by_osd_2 = tmp_osd_map.get_pgs_by_osd(g_ceph_context, pid, &prim_pgs_by_osd_2, &acting_prims_by_osd_2);
-    cout << " \n";
-    cout << "---------- AFTER ------------ \n";
-    for (auto [osd, pgs] : acting_prims_by_osd_2) {
-      cout << " osd." << osd << " | primary affinity: " << tmp_osd_map.get_primary_affinityf(osd) << " | number of prims: " << pgs.size() << "\n";
-    }
-    cout << " \n";
     tmp_osd_map.calc_read_balance_score(g_ceph_context, pid, &rb_info);
-    cout << "read_balance_score of '" << read_pool << "': " << rb_info.acting_adj_score << "\n";
-    cout << " \n";
+    float read_balance_score_after = rb_info.acting_adj_score;
 
-    cout << "num changes: " << num_changes << "\n";
-    cout << " \n";
+    if ((num_changes > 0) &&
+	(read_balance_score_after < read_balance_score_before)) {
+	cout << " \n";
+        cout << "---------- BEFORE ------------ \n";
+        for (auto [osd, pgs] : acting_prims_by_osd) {
+	  cout << " osd." << osd << " | primary affinity: " << tmp_osd_map.get_primary_affinityf(osd) << " | number of prims: " << pgs.size() << "\n";
+	}
+        cout << " \n";
+	cout << "read_balance_score of '" << read_pool << "': " << read_balance_score_before << "\n\n\n";
 
-    if (num_changes > 0) {
-      print_inc_upmaps(pending_inc, upmap_fd);
+        cout << "---------- AFTER ------------ \n";
+        for (auto [osd, pgs] : acting_prims_by_osd_2) {
+	  cout << " osd." << osd << " | primary affinity: " << tmp_osd_map.get_primary_affinityf(osd) << " | number of prims: " << pgs.size() << "\n";
+        }
+	cout << " \n";
+	cout << "read_balance_score of '" << read_pool << "': " << read_balance_score_after << "\n\n\n";
+	cout << "num changes: " << num_changes << "\n";
+
+	print_inc_upmaps(pending_inc, upmap_fd);
+    } else {
+      cout << " Unable to find further optimization, or distribution is already perfect\n";
     }
   }
   if (upmap) {
