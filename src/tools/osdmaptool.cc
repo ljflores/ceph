@@ -160,8 +160,8 @@ int main(int argc, const char **argv)
   std::set<std::string> upmap_pools;
   std::random_device::result_type upmap_seed;
   std::random_device::result_type *upmap_p_seed = nullptr;
-  bool workload = false;
-  std::string workload_pool;
+  bool read = false;
+  std::string read_pool;
 
   int64_t pg_num = -1;
   bool test_map_pgs_dump_all = false;
@@ -191,16 +191,16 @@ int main(int argc, const char **argv)
     } else if (ceph_argparse_witharg(args, i, &upmap_file, "--upmap", (char*)NULL)) {
       upmap_cleanup = true;
       upmap = true;
-    } else if (ceph_argparse_witharg(args, i, &upmap_file, "--workload", (char*)NULL)) {
-	workload = true;
+    } else if (ceph_argparse_witharg(args, i, &upmap_file, "--read", (char*)NULL)) {
+	read = true;
     } else if (ceph_argparse_witharg(args, i, &upmap_max, err, "--upmap-max", (char*)NULL)) {
     } else if (ceph_argparse_witharg(args, i, &upmap_deviation, err, "--upmap-deviation", (char*)NULL)) {
     } else if (ceph_argparse_witharg(args, i, (int *)&upmap_seed, err, "--upmap-seed", (char*)NULL)) {
       upmap_p_seed = &upmap_seed;
     } else if (ceph_argparse_witharg(args, i, &val, "--upmap-pool", (char*)NULL)) {
       upmap_pools.insert(val);
-    } else if (ceph_argparse_witharg(args, i, &val, "--workload-pool", (char*)NULL)) {
-      workload_pool = val;
+    } else if (ceph_argparse_witharg(args, i, &val, "--read-pool", (char*)NULL)) {
+      read_pool = val;
     } else if (ceph_argparse_witharg(args, i, &num_osd, err, "--createsimple", (char*)NULL)) {
       if (!err.str().empty()) {
 	cerr << err.str() << std::endl;
@@ -431,7 +431,7 @@ int main(int argc, const char **argv)
     OSDMap::clean_temps(g_ceph_context, osdmap, tmpmap, &pending_inc);
   }
   int upmap_fd = STDOUT_FILENO;
-  if (upmap || upmap_cleanup || workload) {
+  if (upmap || upmap_cleanup || read) {
     if (upmap_file != "-") {
       upmap_fd = ::open(upmap_file.c_str(), O_CREAT|O_WRONLY|O_TRUNC, 0644);
       if (upmap_fd < 0) {
@@ -453,10 +453,10 @@ int main(int argc, const char **argv)
       ceph_assert(r == 0);
     }
   }
-  if (workload) {
-    int64_t pid = osdmap.lookup_pg_pool_name(workload_pool);
+  if (read) {
+    int64_t pid = osdmap.lookup_pg_pool_name(read_pool);
     if (pid < 0) {
-      cerr << " pool " << workload_pool << " does not exist" << std::endl;
+      cerr << " pool " << read_pool << " does not exist" << std::endl;
       exit(1);
     }
 
@@ -478,7 +478,7 @@ int main(int argc, const char **argv)
 
     OSDMap::read_balance_info_t rb_info;
     tmp_osd_map.calc_read_balance_score(g_ceph_context, pid, &rb_info);
-    cout << "read_balance_score of '" << workload_pool << "': " << rb_info.acting_adj_score << "\n";
+    cout << "read_balance_score of '" << read_pool << "': " << rb_info.acting_adj_score << "\n";
     cout << " \n";
 
     OSDMap::Incremental pending_inc(osdmap.get_epoch()+1);
@@ -495,7 +495,7 @@ int main(int argc, const char **argv)
     }
     cout << " \n";
     tmp_osd_map.calc_read_balance_score(g_ceph_context, pid, &rb_info);
-    cout << "read_balance_score of '" << workload_pool << "': " << rb_info.acting_adj_score << "\n";
+    cout << "read_balance_score of '" << read_pool << "': " << rb_info.acting_adj_score << "\n";
     cout << " \n";
 
     cout << "num changes: " << num_changes << "\n";
@@ -859,7 +859,7 @@ skip_upmap:
       export_crush.empty() && import_crush.empty() && 
       test_map_pg.empty() && test_map_object.empty() &&
       !test_map_pgs && !test_map_pgs_dump && !test_map_pgs_dump_all &&
-      adjust_crush_weight.empty() && !upmap && !upmap_cleanup && !workload) {
+      adjust_crush_weight.empty() && !upmap && !upmap_cleanup && !read) {
     cerr << me << ": no action specified?" << std::endl;
     usage();
   }
