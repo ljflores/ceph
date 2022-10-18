@@ -722,6 +722,7 @@ class OSDThrasher(Thrasher):
         self.log("thrash_pg_upmap_items")
         from random import shuffle
         out = self.ceph_manager.raw_cluster_cmd('osd', 'dump', '-f', 'json-pretty')
+        self.log('out is: %s' % out)
         j = json.loads(out)
         self.log('j is %s' % j)
         try:
