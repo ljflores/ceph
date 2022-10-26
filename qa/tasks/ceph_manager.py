@@ -677,7 +677,12 @@ class OSDThrasher(Thrasher):
         self.log("thrash_pg_upmap")
         from random import shuffle
         out = self.ceph_manager.raw_cluster_cmd('osd', 'dump', '-f', 'json-pretty')
-        j = json.loads(out)
+        try:
+            j = json.loads(out)
+        except json.decoder.JSONDecodeError:
+            out2 = self.ceph_manager.raw_cluster_cmd('pg', 'dump', 'pgs_brief', '-f', 'json-pretty')
+            self.log('**** PGS DUMP **** %s' % out2)
+            raise
         self.log('j is %s' % j)
         try:
             if random.random() >= .3:
