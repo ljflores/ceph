@@ -20,6 +20,8 @@
 #include <optional>
 #include <random>
 
+#include <sstream>  //TO-REMOVE
+
 #include <boost/algorithm/string.hpp>
 
 #include "OSDMap.h"
@@ -579,14 +581,16 @@ void OSDMap::Incremental::encode(ceph::buffer::list& bl, uint64_t features) cons
   ENCODE_START(8, 7, bl);
 
   {
-    uint8_t v = 8;
+    uint8_t v = 9;
     if (!HAVE_FEATURE(features, SERVER_LUMINOUS)) {
       v = 3;
     } else if (!HAVE_FEATURE(features, SERVER_MIMIC)) {
       v = 5;
     } else if (!HAVE_FEATURE(features, SERVER_NAUTILUS)) {
       v = 6;
-    }
+    } /* else if (!HAVE_FEATURE(features, SERVER_REEF)) {
+      v = 8;
+    } */
     ENCODE_START(v, 1, bl); // client-usable data
     encode(fsid, bl);
     encode(epoch, bl);
@@ -644,6 +648,10 @@ void OSDMap::Incremental::encode(ceph::buffer::list& bl, uint64_t features) cons
     if (v >= 8) {
       encode(new_last_up_change, bl);
       encode(new_last_in_change, bl);
+    }
+    if (v >= 9) {
+      encode(new_pg_upmap_primary, bl);
+      encode(old_pg_upmap_primary, bl);
     }
     ENCODE_FINISH(bl); // client-usable data
   }
@@ -1175,6 +1183,7 @@ void OSDMap::Incremental::dump(Formatter *f) const
   }
   f->close_section();
 
+  //FIXME: incremental dump
   f->open_array_section("new_pg_upmap_items");
   for (auto& i : new_pg_upmap_items) {
     f->open_object_section("mapping");
@@ -1190,11 +1199,19 @@ void OSDMap::Incremental::dump(Formatter *f) const
     f->close_section();
   }
   f->close_section();
-  f->open_array_section("old_pg_upmap_items");
+  f->open_array_section("old_pg_upmap_items");	//FIXME: incremental dump
   for (auto& i : old_pg_upmap_items) {
     f->dump_stream("pgid") << i;
   }
   f->close_section();
+
+  //FIXME: incremental dump - add new_pg_upmap_items, old_pg_upmap_items
+  // Add section for all primary items OR add primary for each PG
+//       else {
+// 	f->open_object_section("primary mapping");
+// 	f->dump_int("to", p.second);
+// 	f->close_section();
+//       }
 
   f->open_array_section("new_up_thru");
 
@@ -1709,7 +1726,7 @@ uint64_t OSDMap::get_features(int entity_type, uint64_t *pmask) const
   }
   mask |= CEPH_FEATURES_CRUSH;
 
-  if (!pg_upmap.empty() || !pg_upmap_items.empty())
+  if (!pg_upmap.empty() || !pg_upmap_items.empty())  //FIXME: need new feature bit?
     features |= CEPH_FEATUREMASK_OSDMAP_PG_UPMAP;
   mask |= CEPH_FEATUREMASK_OSDMAP_PG_UPMAP;
 
@@ -1986,12 +2003,15 @@ void OSDMap::clean_temps(CephContext *cct,
   }
 }
 
+//FIXME: Check if need to updtate for pg_upmap_primary
 void OSDMap::get_upmap_pgs(vector<pg_t> *upmap_pgs) const
 {
   upmap_pgs->reserve(pg_upmap.size() + pg_upmap_items.size());
   for (auto& p : pg_upmap)
     upmap_pgs->push_back(p.first);
   for (auto& p : pg_upmap_items)
+    upmap_pgs->push_back(p.first);
+  for (auto& p : pg_upmap_primary)
     upmap_pgs->push_back(p.first);
 }
 
@@ -2074,13 +2094,13 @@ bool OSDMap::check_pg_upmaps(
     auto i = pg_upmap.find(pg);
     if (i != pg_upmap.end()) {
       if (i->second == raw) {
-        ldout(cct, 10) << "removing redundant pg_upmap " << i->first << " "
+        ldout(cct, 10) << __func__ << "removing redundant pg_upmap " << i->first << " "
                        << i->second << dendl;
         to_cancel->push_back(pg);
         continue;
       }
       if ((int)i->second.size() != get_pg_pool_size(pg)) {
-        ldout(cct, 10) << "removing pg_upmap " << i->first << " "
+        ldout(cct, 10) << __func__ << "removing pg_upmap " << i->first << " "
                        << i->second << " != pool size " << get_pg_pool_size(pg)
                        << dendl;
         to_cancel->push_back(pg);
@@ -2091,24 +2111,29 @@ bool OSDMap::check_pg_upmaps(
     if (j != pg_upmap_items.end()) {
       mempool::osdmap::vector<pair<int,int>> newmap;
       for (auto& p : j->second) {
-        if (std::find(raw.begin(), raw.end(), p.first) == raw.end()) {
+	auto osd_from = p.first;
+	auto osd_to = p.second;
+        if (std::find(raw.begin(), raw.end(), osd_from) == raw.end()) {
           // cancel mapping if source osd does not exist anymore
+          ldout(cct, 20) << __func__ << " pg_upmap_items (source osd does not exist) " << pg_upmap_items << dendl;
           continue;
         }
-        if (p.second != CRUSH_ITEM_NONE && p.second < max_osd &&
-            p.second >= 0 && osd_weight[p.second] == 0) {
+        if (osd_to != CRUSH_ITEM_NONE && osd_to < max_osd &&
+            osd_to >= 0 && osd_weight[osd_to] == 0) {
           // cancel mapping if target osd is out
+          ldout(cct, 20) << __func__ << " pg_upmap_items (target osd is out) " << pg_upmap_items << dendl;
           continue;
         }
         newmap.push_back(p);
       }
       if (newmap.empty()) {
-        ldout(cct, 10) << " removing no-op pg_upmap_items "
+        ldout(cct, 10) << __func__ << " removing no-op pg_upmap_items "
                        << j->first << " " << j->second
                        << dendl;
         to_cancel->push_back(pg);
-      } else if (newmap != j->second) {
-        ldout(cct, 10) << " simplifying partially no-op pg_upmap_items "
+      } else {
+        //Josh--check partial no-op here.
+        ldout(cct, 10) << __func__ << " simplifying partially no-op pg_upmap_items "
                        << j->first << " " << j->second
                        << " -> " << newmap
                        << dendl;
@@ -2116,11 +2141,13 @@ bool OSDMap::check_pg_upmaps(
         any_change = true;
       }
     }
+    //FIXME: Josh - add checks here for primary mapping
   }
   any_change = any_change || !to_cancel->empty();
   return any_change;
 }
 
+//FIXME: add clean of pg_upmap_primaries here
 void OSDMap::clean_pg_upmaps(
   CephContext *cct,
   Incremental *pending_inc,
@@ -2383,9 +2410,25 @@ int OSDMap::apply_incremental(const Incremental &inc)
   }
   for (auto& p : inc.new_pg_upmap_items) {
     pg_upmap_items[p.first] = p.second;
+    //TO-REMOVE: Josh
+    ldout(g_ceph_context, 20) << __func__ << " Josh: pg_upmap_items "
+                              << p.first << " -> " << p.second << dendl;
   }
   for (auto& pg : inc.old_pg_upmap_items) {
     pg_upmap_items.erase(pg);
+  }
+  // FIXME: handle upmap_primary here (old and new)
+  for (auto& [pg, prim] : inc.new_pg_upmap_primary) {
+    pg_upmap_primary[pg] = prim;
+    //TO-REMOVE: Josh
+    ldout(g_ceph_context, 20) << __func__ << " Josh: pg_upmap_primary "
+                              << pg << ": osd." << prim << dendl;
+  }
+  for (auto& pg : inc.old_pg_upmap_primary) {
+    pg_upmap_primary.erase(pg);
+    //TO-REMOVE: Josh
+    ldout(g_ceph_context, 20) << __func__ << " Josh: remove pg_upmap_primary for "
+                              << pg << dendl;
   }
 
   // blocklist
@@ -2614,26 +2657,47 @@ void OSDMap::_apply_upmap(const pg_pool_t& pi, pg_t raw_pg, vector<int> *raw) co
   if (q != pg_upmap_items.end()) {
     // NOTE: this approach does not allow a bidirectional swap,
     // e.g., [[1,2],[2,1]] applied to [0,1,2] -> [0,2,1].
-    for (auto& r : q->second) {
+    for (auto& [osd_from, osd_to] : q->second) {
+      // A capcaity change upmap (repace osd in the pg with osd not in the pg)
       // make sure the replacement value doesn't already appear
       bool exists = false;
       ssize_t pos = -1;
       for (unsigned i = 0; i < raw->size(); ++i) {
 	int osd = (*raw)[i];
-	if (osd == r.second) {
+	if (osd == osd_to) {
 	  exists = true;
 	  break;
 	}
 	// ignore mapping if target is marked out (or invalid osd id)
-	if (osd == r.first &&
+	if (osd == osd_from &&
 	    pos < 0 &&
-	    !(r.second != CRUSH_ITEM_NONE && r.second < max_osd &&
-	      r.second >= 0 && osd_weight[r.second] == 0)) {
+	    !(osd_to != CRUSH_ITEM_NONE && osd_to < max_osd &&
+	    osd_to >= 0 && osd_weight[osd_to] == 0)) {
 	  pos = i;
-	}
+	  }
       }
       if (!exists && pos >= 0) {
-	(*raw)[pos] = r.second;
+	(*raw)[pos] = osd_to;
+      }
+    }
+  }
+  auto r = pg_upmap_primary.find(pg);
+  if (r != pg_upmap_primary.end()) {
+    auto new_prim = r->second;	
+    // Apply mapping only if new primary is not marked out and valid osd id
+    if (new_prim != CRUSH_ITEM_NONE && new_prim < max_osd && new_prim >= 0 &&
+	osd_weight[new_prim] != 0) {
+      int new_prim_idx = 0;
+      for (int i = 1 ; i < (int)raw->size(); i++) {  // start from 1 on purpose
+        if ((*raw)[i] == new_prim) {
+	  new_prim_idx = i;
+	  break;
+        }
+      }
+      if (new_prim_idx > 0) {
+	// swap primary
+        (*raw)[new_prim_idx] = (*raw)[0];
+        (*raw)[0] = new_prim;
       }
     }
   }
@@ -3068,14 +3132,16 @@ void OSDMap::encode(ceph::buffer::list& bl, uint64_t features) const
   {
     // NOTE: any new encoding dependencies must be reflected by
     // SIGNIFICANT_FEATURES
-    uint8_t v = 9;
+    uint8_t v = 10;
     if (!HAVE_FEATURE(features, SERVER_LUMINOUS)) {
       v = 3;
     } else if (!HAVE_FEATURE(features, SERVER_MIMIC)) {
       v = 6;
     } else if (!HAVE_FEATURE(features, SERVER_NAUTILUS)) {
       v = 7;
-    }
+    } /* else if (!HAVE_FEATURE(features, SERVER_REEF)) {
+      v = 9;
+    } */
     ENCODE_START(v, 1, bl); // client-usable data
     // base
     encode(fsid, bl);
@@ -3149,6 +3215,11 @@ void OSDMap::encode(ceph::buffer::list& bl, uint64_t features) const
     if (v >= 9) {
       encode(last_up_change, bl);
       encode(last_in_change, bl);
+    }
+    if (v >= 10) {
+      encode(pg_upmap_primary, bl);
+    } else {
+      ceph_assert(pg_upmap_primary.empty());
     }
     ENCODE_FINISH(bl); // client-usable data
   }
@@ -3484,6 +3555,11 @@ void OSDMap::decode(ceph::buffer::list::const_iterator& bl)
       decode(last_up_change, bl);
       decode(last_in_change, bl);
     }
+    if (struct_v >= 10) {
+      decode(pg_upmap_primary, bl);
+    } else {
+      pg_upmap_primary.clear();
+    }
     DECODE_FINISH(bl); // client-usable data
   }
 
@@ -3753,21 +3829,31 @@ void OSDMap::dump(Formatter *f) const
     f->close_section();
   }
   f->close_section();
+  //FIXME: add primary mapping
   f->open_array_section("pg_upmap_items");
-  for (auto& p : pg_upmap_items) {
+  for (auto& [pgid, mappings] : pg_upmap_items) {
     f->open_object_section("mapping");
-    f->dump_stream("pgid") << p.first;
+    f->dump_stream("pgid") << pgid;
     f->open_array_section("mappings");
-    for (auto& q : p.second) {
+    for (auto& [from, to] : mappings) {
       f->open_object_section("mapping");
-      f->dump_int("from", q.first);
-      f->dump_int("to", q.second);
+      f->dump_int("from", from);
+      f->dump_int("to", to);
       f->close_section();
     }
     f->close_section();
     f->close_section();
   }
   f->close_section();
+  //FIXME: add primary mapping section here.
+//     if (new_prim > 0) {
+//       vector<int> up;
+//       pg_to_up_acting_osds(pgid, &up, NULL, NULL, NULL);
+//       f->open_object_section("primary_change");
+//       f->dump_int("from", up[0]);
+//       f->dump_int("to", up[new_prim]);
+//       f->close_section();
+//     }
   f->open_array_section("pg_temp");
   pg_temp->dump(f);
   f->close_section();
@@ -4045,6 +4131,7 @@ void OSDMap::print(ostream& out) const
   for (auto& p : pg_upmap) {
     out << "pg_upmap " << p.first << " " << p.second << "\n";
   }
+  //FIXME: print priamry mapping
   for (auto& p : pg_upmap_items) {
     out << "pg_upmap_items " << p.first << " " << p.second << "\n";
   }
