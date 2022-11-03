@@ -67,6 +67,8 @@ void usage()
   cout << "   --test-crush [--range-first <first> --range-last <last>] map pgs to acting osds" << std::endl;
   cout << "   --adjust-crush-weight <osdid:weight>[,<osdid:weight>,<...>] change <osdid> CRUSH <weight> (but do not persist)" << std::endl;
   cout << "   --save                  write modified osdmap with upmap or crush-adjust changes" << std::endl;
+  cout << "   --read <file>           calculate pg upmap entries to balance pg primaries" << std::endl;
+  cout << "   --read-pool <poolname>  specify which pool the read balancer should adjust" << std::endl;
   exit(1);
 }
 
