@@ -69,16 +69,21 @@ void usage()
   cout << "   --save                  write modified osdmap with upmap or crush-adjust changes" << std::endl;
   cout << "   --read <file>           calculate pg upmap entries to balance pg primaries" << std::endl;
   cout << "   --read-pool <poolname>  specify which pool the read balancer should adjust" << std::endl;
+  cout << "   --vstart                prefix upmap and read output with './bin/'" << std::endl;
   exit(1);
 }
 
-void print_inc_upmaps(const OSDMap::Incremental& pending_inc, int fd)
+void print_inc_upmaps(const OSDMap::Incremental& pending_inc, int fd, bool vstart)
 {
   ostringstream ss;
   for (auto& i : pending_inc.old_pg_upmap) {
+    if (vstart)
+      ss << "./bin/";
     ss << "ceph osd rm-pg-upmap " << i << std::endl;
   }
   for (auto& i : pending_inc.new_pg_upmap) {
+    if (vstart)
+      ss << "./bin/";
     ss << "ceph osd pg-upmap " << i.first;
     for (auto osd : i.second) {
       ss << " " << osd;
@@ -86,9 +91,13 @@ void print_inc_upmaps(const OSDMap::Incremental& pending_inc, int fd)
     ss << std::endl;
   }
   for (auto& i : pending_inc.old_pg_upmap_items) {
+    if (vstart)
+      ss << "./bin/";
     ss << "ceph osd rm-pg-upmap-items " << i << std::endl;
   }
   for (auto& i : pending_inc.new_pg_upmap_items) {
+    if (vstart)
+      ss << "./bin/";
     ss << "ceph osd pg-upmap-items " << i.first;
     for (auto p : i.second) {
       ss << " " << p.first << " " << p.second;
@@ -96,6 +105,8 @@ void print_inc_upmaps(const OSDMap::Incremental& pending_inc, int fd)
     ss << std::endl;
   }
   for (auto& i : pending_inc.new_primary_temp) {
+    if (vstart)
+      ss << "./bin/";
     ss << "ceph osd primary-temp " << i.first << " " << i.second << std::endl;
   }
   string s = ss.str();
@@ -168,6 +179,7 @@ int main(int argc, const char **argv)
   int64_t pg_num = -1;
   bool test_map_pgs_dump_all = false;
   bool save = false;
+  bool vstart = false;
 
   std::string val;
   std::ostringstream err;
@@ -277,6 +289,8 @@ int main(int argc, const char **argv)
       adjust_crush_weight = val;
     } else if (ceph_argparse_flag(args, i, "--save", (char*)NULL)) {
       save = true;
+    } else if (ceph_argparse_flag(args, i, "--vstart", (char*)NULL)) {
+      vstart = true;
     } else {
       ++i;
     }
@@ -450,7 +464,7 @@ int main(int argc, const char **argv)
     pending_inc.fsid = osdmap.get_fsid();
     int r = osdmap.clean_pg_upmaps(g_ceph_context, &pending_inc);
     if (r > 0) {
-      print_inc_upmaps(pending_inc, upmap_fd);
+      print_inc_upmaps(pending_inc, upmap_fd, vstart);
       r = osdmap.apply_incremental(pending_inc);
       ceph_assert(r == 0);
     }
@@ -504,7 +518,7 @@ int main(int argc, const char **argv)
 	cout << "read_balance_score of '" << read_pool << "': " << read_balance_score_after << "\n\n\n";
 	cout << "num changes: " << num_changes << "\n";
 
-	print_inc_upmaps(pending_inc, upmap_fd);
+	print_inc_upmaps(pending_inc, upmap_fd, vstart);
     } else {
       cout << " Unable to find further optimization, or distribution is already perfect\n";
     }
@@ -578,7 +592,7 @@ int main(int argc, const char **argv)
       if (upmap_active)
         cout << "Time elapsed " << elapsed_time << " secs" << std::endl;
       if (total_did > 0) {
-        print_inc_upmaps(pending_inc, upmap_fd);
+        print_inc_upmaps(pending_inc, upmap_fd, vstart);
         if (save || upmap_active) {
 	  int r = osdmap.apply_incremental(pending_inc);
 	  ceph_assert(r == 0);
