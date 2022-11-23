@@ -1455,7 +1455,7 @@ public:
     std::vector<int> *orig,
     std::vector<int> *out);             ///< resulting alternative mapping
 
-  int calc_workload_balancer(
+  int balance_primaries(
     CephContext *cct,
     int64_t pid,
     Incremental *pending_inc,

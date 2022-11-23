@@ -490,7 +490,7 @@ int main(int argc, const char **argv)
 
     // Calculate read balancer
     OSDMap::Incremental pending_inc(osdmap.get_epoch()+1);
-    int num_changes = osdmap.calc_workload_balancer(g_ceph_context, pid, &pending_inc, tmp_osd_map);
+    int num_changes = osdmap.balance_primaries(g_ceph_context, pid, &pending_inc, tmp_osd_map);
 
     // Gather AFTER info
     map<uint64_t,set<pg_t>> pgs_by_osd_2;

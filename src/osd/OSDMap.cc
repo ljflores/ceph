@@ -4913,7 +4913,7 @@ bool OSDMap::try_pg_upmap(
 }
 
 
-int OSDMap::calc_workload_balancer(
+int OSDMap::balance_primaries(
   CephContext *cct,
   int64_t pid,
   OSDMap::Incremental *pending_inc,
