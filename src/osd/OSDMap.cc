@@ -5010,8 +5010,8 @@ int OSDMap::balance_primaries(
 	prim_dist_scores[acting_primary] -= 1;
 
 	// Update the mappings
-	pending_inc->new_primary_temp[pg] = curr_best_osd; // update the mapping
-	(*tmp_osd_map.primary_temp)[pg] = curr_best_osd; // TODO: for testing; changing it on the temporary osd map to later print the distributions
+	pending_inc->new_pg_upmap_primary[pg] = curr_best_osd; // update the mapping
+	tmp_osd_map.pg_upmap_primaries[pg] = curr_best_osd; // TODO: for testing; changing it on the temporary osd map to later print the distributions
 	prim_pgs_to_check[pg] = true;
 
 	curr_num_changes++;

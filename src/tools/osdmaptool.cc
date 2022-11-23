@@ -104,10 +104,10 @@ void print_inc_upmaps(const OSDMap::Incremental& pending_inc, int fd, bool vstar
     }
     ss << std::endl;
   }
-  for (auto& i : pending_inc.new_primary_temp) {
+  for (auto& i : pending_inc.new_pg_upmap_primary) {
     if (vstart)
       ss << "./bin/";
-    ss << "ceph osd primary-temp " << i.first << " " << i.second << std::endl;
+    ss << "ceph osd pg-upmap-primary " << i.first << " " << i.second << std::endl;
   }
   string s = ss.str();
   int r = safe_write(fd, s.c_str(), s.size());
