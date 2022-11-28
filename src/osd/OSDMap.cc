@@ -4938,7 +4938,7 @@ int OSDMap::balance_primaries(
   // our call to calc_desired_primary_distribution.
   map<pg_t,bool> prim_pgs_to_check;
   vector<uint64_t> osds_to_check;
-  for (auto [osd, pgs] : acting_prims_by_osd) {
+  for (auto [osd, pgs] : prim_pgs_by_osd) {
     osds_to_check.push_back(osd);
     for (auto pg : pgs) {
       prim_pgs_to_check.insert({pg, false});
@@ -4952,22 +4952,11 @@ int OSDMap::balance_primaries(
   float actual;
   float desired;
   for (auto osd : osds_to_check) {
-    actual = acting_prims_by_osd[osd].size(); // TODO: eventually change this to prim_pgs_per_pg; acting is just for testing.
+    actual = prim_pgs_by_osd[osd].size();
     desired = desired_prim_dist[osd];
     prim_dist_scores[osd] = actual - desired;
     ldout(cct, 10) << __func__ << " desired distribution for osd." << osd << " " << desired << dendl;
   }
-
-  //-------------- TODO: remove after testing; this is just here for debugging. -------------------
-  ldout(cct, 10) << " " << dendl;
-  ldout(cct, 10) << "---------- BEFORE ------------ " << dendl;
-  for (auto [osd, pgs] : acting_prims_by_osd) {
-    ldout(cct, 10) << __func__ << " osd." << osd << " ~ prims: " << pgs.size()
-                   << " ~ prim_dist_score: " << prim_dist_scores[osd]
-                   << " ~ primary affinity: " << get_primary_affinityf(osd) << dendl;
-  }
-  ldout(cct, 10) << " " << dendl;
-  //------------------------------------------------------------------------------------------------
 
   // get ready to swap pgs
   while (true) {
@@ -4979,13 +4968,12 @@ int OSDMap::balance_primaries(
       // fill in the up, up primary, acting, and acting primary for the current PG
       tmp_osd_map.pg_to_up_acting_osds(pg, &up_osds, &up_primary,
 	  &acting_osds, &acting_primary);
-      // TODO: we are using the acting primary right now for testing, but eventually we will want the up primary.
       
       // find the OSD that would make the best swap based on its score
       // We start by first testing the OSD that is currently primary for the PG we are checking.
-      uint64_t curr_best_osd = acting_primary;
-      float prim_score = prim_dist_scores[acting_primary];
-      for (auto potential_osd : acting_osds) {
+      uint64_t curr_best_osd = up_primary;
+      float prim_score = prim_dist_scores[up_primary];
+      for (auto potential_osd : up_osds) {
 	float potential_score = prim_dist_scores[potential_osd];
 	if ((prim_score > 0) && // taking 1 pg from the prim would not make its score worse
 	    (potential_score < 0) && // adding 1 pg to the potential would not make its score worse
@@ -5004,10 +4992,10 @@ int OSDMap::balance_primaries(
                                  pool_size,
                                  {(int)curr_best_osd});
       if (legal_swap >= 0 &&
-	  ((int)curr_best_osd != acting_primary)) {
+	  ((int)curr_best_osd != up_primary)) {
 	// Update prim_dist_scores
 	prim_dist_scores[curr_best_osd] += 1;
-	prim_dist_scores[acting_primary] -= 1;
+	prim_dist_scores[up_primary] -= 1;
 
 	// Update the mappings
 	pending_inc->new_pg_upmap_primary[pg] = curr_best_osd; // update the mapping
@@ -5024,21 +5012,6 @@ int OSDMap::balance_primaries(
       break;
     }
   }
-
-  //------------TODO: remove after testing; just here for now to show results.---------------------
-  map<uint64_t,set<pg_t>> pgs_by_osd_2;
-  map<uint64_t,set<pg_t>> prim_pgs_by_osd_2;
-  map<uint64_t,set<pg_t>> acting_prims_by_osd_2;
-  pgs_by_osd_2 = tmp_osd_map.get_pgs_by_osd(cct, pid, &prim_pgs_by_osd_2, &acting_prims_by_osd_2);
-  ldout(cct, 10) << " " << dendl;
-  ldout(cct, 10) << "---------- AFTER ------------ " << dendl;
-  for (auto [osd, pgs] : acting_prims_by_osd_2) {
-    ldout(cct, 10) << __func__ << " osd." << osd << " ~ prims: " << pgs.size()
-                   << " ~ prim_dist_score: " << prim_dist_scores[osd]
-                   << " ~ primary affinity: " << get_primary_affinityf(osd) << dendl;
-  }
-  ldout(cct, 10) << " " << dendl;
-  //-----------------------------------------------------------------------------------------------
 
   // Tally total number of changes
   int num_changes = 0;

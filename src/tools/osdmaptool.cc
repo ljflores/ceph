@@ -486,7 +486,7 @@ int main(int argc, const char **argv)
     pgs_by_osd = tmp_osd_map.get_pgs_by_osd(g_ceph_context, pid, &prim_pgs_by_osd, &acting_prims_by_osd);
     OSDMap::read_balance_info_t rb_info;
     tmp_osd_map.calc_read_balance_score(g_ceph_context, pid, &rb_info);
-    float read_balance_score_before = rb_info.acting_adj_score;
+    float read_balance_score_before = rb_info.adjusted_score;
 
     // Calculate read balancer
     OSDMap::Incremental pending_inc(osdmap.get_epoch()+1);
@@ -498,20 +498,20 @@ int main(int argc, const char **argv)
     map<uint64_t,set<pg_t>> acting_prims_by_osd_2;
     pgs_by_osd_2 = tmp_osd_map.get_pgs_by_osd(g_ceph_context, pid, &prim_pgs_by_osd_2, &acting_prims_by_osd_2);
     tmp_osd_map.calc_read_balance_score(g_ceph_context, pid, &rb_info);
-    float read_balance_score_after = rb_info.acting_adj_score;
+    float read_balance_score_after = rb_info.adjusted_score;
 
     if ((num_changes > 0) &&
 	(read_balance_score_after < read_balance_score_before)) {
 	cout << " \n";
         cout << "---------- BEFORE ------------ \n";
-        for (auto [osd, pgs] : acting_prims_by_osd) {
+        for (auto [osd, pgs] : prim_pgs_by_osd) {
 	  cout << " osd." << osd << " | primary affinity: " << tmp_osd_map.get_primary_affinityf(osd) << " | number of prims: " << pgs.size() << "\n";
 	}
         cout << " \n";
 	cout << "read_balance_score of '" << read_pool << "': " << read_balance_score_before << "\n\n\n";
 
         cout << "---------- AFTER ------------ \n";
-        for (auto [osd, pgs] : acting_prims_by_osd_2) {
+        for (auto [osd, pgs] : prim_pgs_by_osd_2) {
 	  cout << " osd." << osd << " | primary affinity: " << tmp_osd_map.get_primary_affinityf(osd) << " | number of prims: " << pgs.size() << "\n";
         }
 	cout << " \n";
