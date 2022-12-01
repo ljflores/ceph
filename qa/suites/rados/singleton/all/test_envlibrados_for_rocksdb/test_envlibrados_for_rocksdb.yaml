@@ -1,3 +1,5 @@
+os_type: centos
+
 overrides:
   ceph:
     fs: ext4
