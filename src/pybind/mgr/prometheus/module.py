@@ -1,6 +1,7 @@
 import cherrypy
 from collections import defaultdict
 from distutils.version import StrictVersion
+from pkg_resources import packaging  # type: ignore
 import json
 import errno
 import math
@@ -33,6 +34,7 @@ DEFAULT_PORT = 9283
 # ipv6 isn't yet configured / supported and CherryPy throws an uncaught
 # exception.
 if cherrypy is not None:
+    StrictVersion = packaging.version.StrictVersion
     v = StrictVersion(cherrypy.__version__)
     # the issue was fixed in 3.2.3. it's present in 3.2.2 (current version on
     # centos:7) and back to at least 3.0.0.
