@@ -2280,6 +2280,51 @@ TEST_F(OSDMapTest, blocklisting_everything) {
   }
 }
 
+TEST_F(OSDMapTest, read_balancer_basic) {
+  // Set up a map with 4 OSDs and default pools
+  set_up_map(4);
+
+  OSDMap::read_balance_info_t rb_info;
+  osdmap.calc_read_balance_score(g_ceph_context, 2, &rb_info);
+  float read_balance_score_before = rb_info.adjusted_score;
+
+  OSDMap::Incremental pending_inc(osdmap.get_epoch()+1);
+  osdmap.balance_primaries(g_ceph_context, 2, &pending_inc, osdmap);
+  osdmap.apply_incremental(pending_inc);
+
+  osdmap.calc_read_balance_score(g_ceph_context, 2, &rb_info);
+  float read_balance_score_after = rb_info.adjusted_score;
+
+  ASSERT_TRUE(read_balance_score_before > read_balance_score_after);
+}
+
+TEST_F(OSDMapTest, read_balancer_large_map) {
+  // Set up a map with 50 OSDs and default pools
+  set_up_map(60);
+
+  /*
+  Formatter *f = Formatter::create("json-pretty");
+  f->open_object_section("osdmap");
+  osdmap.dump(f, g_ceph_context);
+  f->close_section();
+  f->flush(cout);
+  delete f;
+  */
+
+  OSDMap::read_balance_info_t rb_info;
+  osdmap.calc_read_balance_score(g_ceph_context, 2, &rb_info);
+  float read_balance_score_before = rb_info.adjusted_score;
+
+  OSDMap::Incremental pending_inc(osdmap.get_epoch()+1);
+  osdmap.balance_primaries(g_ceph_context, 2, &pending_inc, osdmap);
+  osdmap.apply_incremental(pending_inc);
+
+  osdmap.calc_read_balance_score(g_ceph_context, 2, &rb_info);
+  float read_balance_score_after = rb_info.adjusted_score;
+
+  ASSERT_TRUE(read_balance_score_before > read_balance_score_after);
+}
+
 INSTANTIATE_TEST_SUITE_P(
   OSDMap,
   OSDMapTest,
