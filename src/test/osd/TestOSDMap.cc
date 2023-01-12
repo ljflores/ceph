@@ -2443,6 +2443,287 @@ TEST_F(OSDMapTest, ReadBalanceScore2) {
 
   }
 
+TEST_F(OSDMapTest, read_balance_small_map) {
+  // Set up a map with 4 OSDs and default pools
+  set_up_map(4);
+
+  // Make sure capacity is balanced first
+  set<int64_t> only_pools;
+  only_pools.insert(2); // pool 2 is the default replica
+  OSDMap::Incremental pending_inc(osdmap.get_epoch()+1);
+  osdmap.calc_pg_upmaps(g_ceph_context,
+                        0,
+                        100,
+                        only_pools,
+                        &pending_inc);
+  osdmap.apply_incremental(pending_inc);
+
+  // Get read balance score before balancing
+  OSDMap::read_balance_info_t rb_info;
+  osdmap.calc_read_balance_score(g_ceph_context, 2, &rb_info);
+  float read_balance_score_before = rb_info.adjusted_score;
+
+  // Balance reads
+  OSDMap::Incremental pending_inc2(osdmap.get_epoch()+1);
+  int num_changes = osdmap.balance_primaries(g_ceph_context, 2, &pending_inc2, osdmap);
+  osdmap.apply_incremental(pending_inc2);
+
+  // Get read balance score after balancing
+  osdmap.calc_read_balance_score(g_ceph_context, 2, &rb_info);
+  float read_balance_score_after = rb_info.adjusted_score;
+
+  // Check for improvements
+  ASSERT_TRUE(read_balance_score_after <= read_balance_score_before);
+  if (num_changes > 0) {
+    ASSERT_TRUE(read_balance_score_after < read_balance_score_before);
+  }
+}
+
+TEST_F(OSDMapTest, read_balance_small_map_prim_affinity) {
+  // Set up a map with 4 OSDs and default pools
+  set_up_map(4);
+
+  // Make osd.0 off-limits for primaries by giving it prim affinity 0
+  OSDMap::Incremental pending_inc0(osdmap.get_epoch() + 1);
+  pending_inc0.new_primary_affinity[0] = 0;
+  osdmap.apply_incremental(pending_inc0);
+
+  // Ensure osd.0 has no primaries assigned to it
+  map<uint64_t,set<pg_t>> prim_pgs_by_osd0;
+  map<uint64_t,set<pg_t>> acting_prims_by_osd0;
+  osdmap.get_pgs_by_osd(g_ceph_context, 2, &prim_pgs_by_osd0, &acting_prims_by_osd0);
+  ASSERT_TRUE(prim_pgs_by_osd0[0].size() == 0);
+  ASSERT_TRUE(acting_prims_by_osd0[0].size() == 0);
+
+  // Make sure capacity is balanced first
+  set<int64_t> only_pools;
+  only_pools.insert(2); // pool 2 is the default replica
+  OSDMap::Incremental pending_inc1(osdmap.get_epoch()+1);
+  osdmap.calc_pg_upmaps(g_ceph_context,
+                        0,
+                        100,
+                        only_pools,
+                        &pending_inc1);
+  osdmap.apply_incremental(pending_inc1);
+
+  // Get read balance score before balancing
+  OSDMap::read_balance_info_t rb_info;
+  osdmap.calc_read_balance_score(g_ceph_context, 2, &rb_info);
+  float read_balance_score_before = rb_info.adjusted_score;
+
+  // Balance reads
+  OSDMap::Incremental pending_inc2(osdmap.get_epoch()+1);
+  int num_changes = osdmap.balance_primaries(g_ceph_context, 2, &pending_inc2, osdmap);
+  osdmap.apply_incremental(pending_inc2);
+
+  // Ensure osd.0 still has no primaries assigned to it
+  map<uint64_t,set<pg_t>> prim_pgs_by_osd1;
+  map<uint64_t,set<pg_t>> acting_prims_by_osd1;
+  osdmap.get_pgs_by_osd(g_ceph_context, 2, &prim_pgs_by_osd1, &acting_prims_by_osd1);
+  ASSERT_TRUE(prim_pgs_by_osd1[0].size() == 0);
+  ASSERT_TRUE(acting_prims_by_osd1[0].size() == 0);
+
+  // Get read balance score after balancing
+  osdmap.calc_read_balance_score(g_ceph_context, 2, &rb_info);
+  float read_balance_score_after = rb_info.adjusted_score;
+
+  // Check for improvements
+  ASSERT_TRUE(read_balance_score_after <= read_balance_score_before);
+  if (num_changes > 0) {
+    ASSERT_TRUE(read_balance_score_after < read_balance_score_before);
+  }
+}
+
+TEST_F(OSDMapTest, read_balance_large_map) {
+  // Set up a map with 60 OSDs and default pools
+  set_up_map(60);
+
+  // Make sure capacity is balanced first
+  set<int64_t> only_pools;
+  only_pools.insert(2); // pool 2 is the default replica
+  OSDMap::Incremental pending_inc(osdmap.get_epoch()+1);
+  osdmap.calc_pg_upmaps(g_ceph_context,
+                        0,
+                        100,
+                        only_pools,
+                        &pending_inc);
+  osdmap.apply_incremental(pending_inc);
+
+  // Get read balance score before balancing
+  OSDMap::read_balance_info_t rb_info;
+  osdmap.calc_read_balance_score(g_ceph_context, 2, &rb_info);
+  float read_balance_score_before = rb_info.adjusted_score;
+
+  // Balance reads
+  OSDMap::Incremental pending_inc2(osdmap.get_epoch()+1);
+  int num_changes = osdmap.balance_primaries(g_ceph_context, 2, &pending_inc2, osdmap);
+  osdmap.apply_incremental(pending_inc2);
+
+  // Get read balance score after balancing
+  osdmap.calc_read_balance_score(g_ceph_context, 2, &rb_info);
+  float read_balance_score_after = rb_info.adjusted_score;
+
+  // Check for improvements
+  ASSERT_TRUE(read_balance_score_after <= read_balance_score_before);
+  if (num_changes > 0) {
+    ASSERT_TRUE(read_balance_score_after < read_balance_score_before);
+  }
+}
+
+TEST_F(OSDMapTest, read_balance_large_map_prim_affinity) {
+  // Set up a map with 60 OSDs and default pools
+  set_up_map(60);
+
+  // Make osd.0 off-limits for primaries by giving it prim affinity 0
+  OSDMap::Incremental pending_inc0(osdmap.get_epoch() + 1);
+  pending_inc0.new_primary_affinity[0] = 0;
+  osdmap.apply_incremental(pending_inc0);
+
+  // Ensure osd.0 has no primaries assigned to it
+  map<uint64_t,set<pg_t>> prim_pgs_by_osd0;
+  map<uint64_t,set<pg_t>> acting_prims_by_osd0;
+  osdmap.get_pgs_by_osd(g_ceph_context, 2, &prim_pgs_by_osd0, &acting_prims_by_osd0);
+  ASSERT_TRUE(prim_pgs_by_osd0[0].size() == 0);
+  ASSERT_TRUE(acting_prims_by_osd0[0].size() == 0);
+
+  // Make sure capacity is balanced first
+  set<int64_t> only_pools;
+  only_pools.insert(2); // pool 2 is the default replica
+  OSDMap::Incremental pending_inc1(osdmap.get_epoch()+1);
+  osdmap.calc_pg_upmaps(g_ceph_context,
+                        0,
+                        100,
+                        only_pools,
+                        &pending_inc1);
+  osdmap.apply_incremental(pending_inc1);
+
+  // Get read balance score before balancing
+  OSDMap::read_balance_info_t rb_info;
+  osdmap.calc_read_balance_score(g_ceph_context, 2, &rb_info);
+  float read_balance_score_before = rb_info.adjusted_score;
+
+  // Balance reads
+  OSDMap::Incremental pending_inc2(osdmap.get_epoch()+1);
+  int num_changes = osdmap.balance_primaries(g_ceph_context, 2, &pending_inc2, osdmap);
+  osdmap.apply_incremental(pending_inc2);
+
+  // Ensure osd.0 still has no primaries assigned to it
+  map<uint64_t,set<pg_t>> prim_pgs_by_osd1;
+  map<uint64_t,set<pg_t>> acting_prims_by_osd1;
+  osdmap.get_pgs_by_osd(g_ceph_context, 2, &prim_pgs_by_osd1, &acting_prims_by_osd1);
+  ASSERT_TRUE(prim_pgs_by_osd1[0].size() == 0);
+  ASSERT_TRUE(acting_prims_by_osd1[0].size() == 0);
+
+  // Get read balance score after balancing
+  osdmap.calc_read_balance_score(g_ceph_context, 2, &rb_info);
+  float read_balance_score_after = rb_info.adjusted_score;
+
+  // Check for improvements
+  ASSERT_TRUE(read_balance_score_after <= read_balance_score_before);
+  if (num_changes > 0) {
+    ASSERT_TRUE(read_balance_score_after < read_balance_score_before);
+  }
+}
+
+TEST_F(OSDMapTest, read_balance_random_map) {
+  // Set up map with random number of OSDs
+  std::srand ( unsigned ( std::time(0) ) );
+  uint num_osds = 3 + (rand() % 100);
+  ASSERT_TRUE(num_osds >= 3);
+  set_up_map(num_osds);
+
+  // Make sure capacity is balanced first
+  set<int64_t> only_pools;
+  only_pools.insert(2); // pool 2 is the default replica
+  OSDMap::Incremental pending_inc(osdmap.get_epoch()+1);
+  osdmap.calc_pg_upmaps(g_ceph_context,
+                        0,
+                        100,
+                        only_pools,
+                        &pending_inc);
+  osdmap.apply_incremental(pending_inc);
+
+  // Get read balance score before balancing
+  OSDMap::read_balance_info_t rb_info;
+  osdmap.calc_read_balance_score(g_ceph_context, 2, &rb_info);
+  float read_balance_score_before = rb_info.adjusted_score;
+
+  // Now balance reads
+  OSDMap::Incremental pending_inc2(osdmap.get_epoch()+1);
+  int num_changes = osdmap.balance_primaries(g_ceph_context, 2, &pending_inc2, osdmap);
+  osdmap.apply_incremental(pending_inc2);
+
+  // Get the updated scores
+  osdmap.calc_read_balance_score(g_ceph_context, 2, &rb_info);
+  float read_balance_score_after = rb_info.adjusted_score;
+
+  // Check for improvements
+  ASSERT_TRUE(read_balance_score_after <= read_balance_score_before);
+  if (num_changes > 0) {
+    ASSERT_TRUE(read_balance_score_after < read_balance_score_before);
+  }
+}
+
+TEST_F(OSDMapTest, read_balance_random_map_prim_affinity) {
+  // Set up map with random number of OSDs
+  std::srand ( unsigned ( std::time(0) ) );
+  uint num_osds = 3 + (rand() % 100);
+  ASSERT_TRUE(num_osds >= 3);
+  set_up_map(num_osds);
+
+  // Make a random OSD off-limits for primaries by giving it prim affinity 0
+  uint rand_osd = rand() % num_osds;
+  ASSERT_TRUE(rand_osd < num_osds);
+  OSDMap::Incremental pending_inc0(osdmap.get_epoch() + 1);
+  pending_inc0.new_primary_affinity[rand_osd] = 0;
+  osdmap.apply_incremental(pending_inc0);
+
+  // Ensure the random OSD has no primaries assigned to it
+  map<uint64_t,set<pg_t>> prim_pgs_by_osd0;
+  map<uint64_t,set<pg_t>> acting_prims_by_osd0;
+  osdmap.get_pgs_by_osd(g_ceph_context, 2, &prim_pgs_by_osd0, &acting_prims_by_osd0);
+  ASSERT_TRUE(prim_pgs_by_osd0[rand_osd].size() == 0);
+  ASSERT_TRUE(acting_prims_by_osd0[rand_osd].size() == 0);
+
+  // Make sure capacity is balanced first
+  set<int64_t> only_pools;
+  only_pools.insert(2); // pool 2 is the default replica
+  OSDMap::Incremental pending_inc1(osdmap.get_epoch()+1);
+  osdmap.calc_pg_upmaps(g_ceph_context,
+                        0,
+                        100,
+                        only_pools,
+                        &pending_inc1);
+  osdmap.apply_incremental(pending_inc1);
+
+  // Get read balance score before balancing
+  OSDMap::read_balance_info_t rb_info;
+  osdmap.calc_read_balance_score(g_ceph_context, 2, &rb_info);
+  float read_balance_score_before = rb_info.adjusted_score;
+
+  // Balance reads
+  OSDMap::Incremental pending_inc2(osdmap.get_epoch()+1);
+  int num_changes = osdmap.balance_primaries(g_ceph_context, 2, &pending_inc2, osdmap);
+  osdmap.apply_incremental(pending_inc2);
+
+  // Ensure the random OSD still has no primaries assigned to it
+  map<uint64_t,set<pg_t>> prim_pgs_by_osd1;
+  map<uint64_t,set<pg_t>> acting_prims_by_osd1;
+  osdmap.get_pgs_by_osd(g_ceph_context, 2, &prim_pgs_by_osd1, &acting_prims_by_osd1);
+  ASSERT_TRUE(prim_pgs_by_osd1[rand_osd].size() == 0);
+  ASSERT_TRUE(acting_prims_by_osd1[rand_osd].size() == 0);
+
+  // Get the updated scores
+  osdmap.calc_read_balance_score(g_ceph_context, 2, &rb_info);
+  float read_balance_score_after = rb_info.adjusted_score;
+
+  // Check for improvements
+  ASSERT_TRUE(read_balance_score_after <= read_balance_score_before);
+  if (num_changes > 0) {
+    ASSERT_TRUE(read_balance_score_after < read_balance_score_before);
+  }
+}
+
 INSTANTIATE_TEST_SUITE_P(
   OSDMap,
   OSDMapTest,
