@@ -5043,7 +5043,7 @@ map<uint64_t,float> OSDMap::calc_desired_primary_distribution(
     pgs_by_osd = get_pgs_by_osd(cct, pid);
 
     // First calculate the distribution using primary affinity and tally up the sum
-    float distribution_sum = 0.0;
+    auto distribution_sum = 0.0;
     for (auto& osd : osds) {
       float osd_primary_count = ((float)pgs_by_osd[osd].size() / (float)replica_count) * get_primary_affinityf(osd);
       desired_primary_distribution.insert({osd, osd_primary_count});
@@ -5052,6 +5052,7 @@ map<uint64_t,float> OSDMap::calc_desired_primary_distribution(
     // Then, stretch the value (necessary when primary affinity is smaller than 1)
     float factor = (float)pool->get_pg_num() / (float)distribution_sum;
     float distribution_sum_desired = 0.0;
+
     ceph_assert(factor >= 1.0);
     for (auto [osd, osd_primary_count] : desired_primary_distribution) {
       desired_primary_distribution[osd] *= factor;
