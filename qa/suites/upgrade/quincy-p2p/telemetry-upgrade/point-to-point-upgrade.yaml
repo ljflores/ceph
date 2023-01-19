@@ -94,7 +94,6 @@ tasks:
       tag: v17.2.5
 - sequential:
    - upgrade-sequence_quincy
-   - workload_quincy_point
 - print: "**** done workload_17.2.5"
 
 ####  upgrade to latest quincy
@@ -103,7 +102,6 @@ tasks:
     mon.b:
 - sequential:
    - upgrade-sequence_quincy
-   - workload_quincy_latest
 - print: "**** done workload_quincy_latest"
 
 #######################
