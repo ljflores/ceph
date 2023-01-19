@@ -81,7 +81,7 @@ tasks:
    add_osds_to_crush: true
 - print: "**** done ceph xfs"
 - sequential:
-   - workload_17.2.0
+   - workload_quincy_initial
 - print: "**** done workload_v17.2.0"
 
 
@@ -94,7 +94,7 @@ tasks:
       tag: v17.2.5
 - sequential:
    - upgrade-sequence_quincy
-   - workload_17.2.5
+   - workload_quincy_point
 - print: "**** done workload_17.2.5"
 
 ####  upgrade to latest quincy
@@ -107,13 +107,13 @@ tasks:
 - print: "**** done workload_quincy_latest"
 
 #######################
-workload_17.2.0:
-- print: "**** done start workload_17.2.0..."
-- print: "**** done end workload_17.2.0..."
+workload_quincy_initial:
+- print: "**** done start workload_quincy_initial..."
+- print: "**** done end workload_quincy_initial..."
 
-workload_17.2.5:
-- print: "**** done start workload_17.2.5..."
-- print: "**** done end workload_17.2.5..."
+workload_quincy_point:
+- print: "**** done start workload_quincy_point..."
+- print: "**** done end workload_quincy_point..."
 
 workload_quincy_latest:
 - print: "**** done start workload_quincy_latest..."
