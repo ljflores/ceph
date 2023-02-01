@@ -2299,7 +2299,7 @@ TEST_F(OSDMapTest, read_balancer_basic) {
 }
 
 TEST_F(OSDMapTest, read_balancer_large_map) {
-  // Set up a map with 50 OSDs and default pools
+  // Set up a map with 60 OSDs and default pools
   set_up_map(60);
 
   /*
@@ -2323,6 +2323,45 @@ TEST_F(OSDMapTest, read_balancer_large_map) {
   float read_balance_score_after = rb_info.adjusted_score;
 
   ASSERT_TRUE(read_balance_score_before > read_balance_score_after);
+}
+
+TEST_F(OSDMapTest, read_balancer_random) {
+  // Set up map with random number of OSDs
+  std::srand ( unsigned ( std::time(0) ) );
+  uint num_osds = 3 + (rand() % 100);
+  ceph_assert(num_osds >= 3);
+  set_up_map(num_osds);
+
+  // Make sure capacity is balanced first
+  set<int64_t> only_pools;
+  only_pools.insert(2); // pool 2 is the default replica
+  OSDMap::Incremental pending_inc(osdmap.get_epoch()+1);
+  osdmap.calc_pg_upmaps(g_ceph_context,
+                        0,
+                        100,
+                        only_pools,
+                        &pending_inc);
+  osdmap.apply_incremental(pending_inc);
+
+  cout << "num osds: " << num_osds << std::endl;
+
+  // Get read balance score before balancing
+  OSDMap::read_balance_info_t rb_info;
+  osdmap.calc_read_balance_score(g_ceph_context, 2, &rb_info);
+  float read_balance_score_before = rb_info.adjusted_score;
+
+  // Now balance reads
+  OSDMap::Incremental pending_inc2(osdmap.get_epoch()+1);
+  osdmap.balance_primaries(g_ceph_context, 2, &pending_inc2, osdmap);
+  osdmap.apply_incremental(pending_inc2);
+
+  // Get the updated scores
+  osdmap.calc_read_balance_score(g_ceph_context, 2, &rb_info);
+  float read_balance_score_after = rb_info.adjusted_score;
+
+  // Check that there has been improvement
+  cout << "before: " << read_balance_score_before << " after: " << read_balance_score_after << std::endl;
+  ASSERT_TRUE(read_balance_score_before >= read_balance_score_after);
 }
 
 INSTANTIATE_TEST_SUITE_P(
