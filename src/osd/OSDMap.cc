@@ -4947,7 +4947,6 @@ int OSDMap::balance_primaries(
 
   // calculate desired primary distribution for each osd
   map<uint64_t,float> desired_prim_dist = calc_desired_primary_distribution(cct, pid, osds_to_check);
-
   map<uint64_t,float> prim_dist_scores;
   float actual;
   float desired;
@@ -4957,6 +4956,11 @@ int OSDMap::balance_primaries(
     prim_dist_scores[osd] = actual - desired;
     ldout(cct, 10) << __func__ << " desired distribution for osd." << osd << " " << desired << dendl;
   }
+
+  // get read balance score before balancing
+  OSDMap::read_balance_info_t rb_info;
+  tmp_osd_map.calc_read_balance_score(cct, pid, &rb_info);
+  float read_balance_score_before = rb_info.adjusted_score;
 
   // get ready to swap pgs
   while (true) {
@@ -4998,9 +5002,9 @@ int OSDMap::balance_primaries(
 	prim_dist_scores[up_primary] -= 1;
 
 	// Update the mappings
-	pending_inc->new_pg_upmap_primary[pg] = curr_best_osd; // update the mapping
-	tmp_osd_map.pg_upmap_primaries[pg] = curr_best_osd; // TODO: for testing; changing it on the temporary osd map to later print the distributions
-	prim_pgs_to_check[pg] = true;
+	pending_inc->new_pg_upmap_primary[pg] = curr_best_osd;
+	tmp_osd_map.pg_upmap_primaries[pg] = curr_best_osd;
+	prim_pgs_to_check[pg] = true; // mark that this pg changed mappings
 
 	curr_num_changes++;
       }
@@ -5013,11 +5017,18 @@ int OSDMap::balance_primaries(
     }
   }
 
+  // get read balance score after balancing
+  tmp_osd_map.calc_read_balance_score(cct, pid, &rb_info);
+  float read_balance_score_after = rb_info.adjusted_score;
+  ceph_assert(read_balance_score_after <= read_balance_score_before);
+
   // Tally total number of changes
   int num_changes = 0;
-  for (auto [pg, mapped] : prim_pgs_to_check) {
-    if (mapped) {
-      num_changes++;
+  if (read_balance_score_after < read_balance_score_before) {
+    for (auto [pg, mapped] : prim_pgs_to_check) {
+      if (mapped) {
+        num_changes++;
+      }
     }
   }
 
