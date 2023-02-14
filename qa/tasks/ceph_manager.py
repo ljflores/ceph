@@ -648,6 +648,11 @@ class OSDThrasher(Thrasher):
 
     def primary_affinity(self, osd=None):
         self.log("primary_affinity")
+
+        # testing12
+        for osd in self.in_osds:
+            self.out_osd(osd)
+
         if osd is None:
             osd = random.choice(self.in_osds)
         if random.random() >= .5:
