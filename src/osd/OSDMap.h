@@ -1455,16 +1455,17 @@ public:
     std::vector<int> *orig,
     std::vector<int> *out);             ///< resulting alternative mapping
 
-  const int balance_primaries(
+  int balance_primaries(
     CephContext *cct,
     int64_t pid,
     Incremental *pending_inc,
-    OSDMap& tmp_osd_map);
+    OSDMap& tmp_osd_map) const;
 
-  const std::map<uint64_t,float> calc_desired_primary_distribution(
+  int calc_desired_primary_distribution(
     CephContext *cct,
     int64_t pid, // pool id
-    const std::vector<uint64_t> &osds); // vector of osd ids
+    const std::vector<uint64_t> &osds,
+    std::map<uint64_t, float>& desired_primary_distribution) const; // vector of osd ids
 
   int calc_pg_upmaps(
     CephContext *cct,

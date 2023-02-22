@@ -4922,18 +4922,18 @@ bool OSDMap::try_pg_upmap(
 }
 
 
-const int OSDMap::balance_primaries(
+int OSDMap::balance_primaries(
   CephContext *cct,
   int64_t pid,
   OSDMap::Incremental *pending_inc,
-  OSDMap& tmp_osd_map)
+  OSDMap& tmp_osd_map) const
 {
   // This function only handles replicated pools.
   const pg_pool_t* pool = get_pg_pool(pid);
   if (! pool->is_replicated()) {
-    ldout(cct, 20) << __func__ << " skipping erasure pool "
-                   << get_pool_name(pid) << dendl;
-    return 0;
+    lderr(cct) << __func__ << " skipping erasure pool "
+               << get_pool_name(pid) << dendl;
+    return -EINVAL;
   }
 
   // Info to be used in verify_upmap
@@ -4954,15 +4954,21 @@ const int OSDMap::balance_primaries(
   // our call to calc_desired_primary_distribution.
   map<pg_t,bool> prim_pgs_to_check;
   vector<uint64_t> osds_to_check;
-  for (auto & [osd, pgs] : prim_pgs_by_osd) {
+  for (const auto & [osd, pgs] : prim_pgs_by_osd) {
     osds_to_check.push_back(osd);
-    for (auto & pg : pgs) {
+    for (const auto & pg : pgs) {
       prim_pgs_to_check.insert({pg, false});
     }
   }
 
   // calculate desired primary distribution for each osd
-  map<uint64_t,float> desired_prim_dist = calc_desired_primary_distribution(cct, pid, osds_to_check);
+  map<uint64_t,float> desired_prim_dist;
+  int rc = 0;
+  rc = calc_desired_primary_distribution(cct, pid, osds_to_check, desired_prim_dist);
+  if (rc < 0) {
+    lderr(cct) << __func__ << " Error in calculating desired primary distribution" << dendl;
+    return -EINVAL;
+  }
   map<uint64_t,float> prim_dist_scores;
   float actual;
   float desired;
@@ -4974,10 +4980,16 @@ const int OSDMap::balance_primaries(
   }
 
   // get read balance score before balancing
-  OSDMap::read_balance_info_t rb_info;
-  tmp_osd_map.calc_read_balance_score(cct, pid, &rb_info);
-  float read_balance_score_before = rb_info.adjusted_score;
-  ceph_assert(read_balance_score_before >= 0);
+  float read_balance_score_before = 0.0;
+  read_balance_info_t rb_info;
+  rc = tmp_osd_map.calc_read_balance_score(cct, pid, &rb_info);
+  if (rc >= 0) {
+    read_balance_score_before = rb_info.adjusted_score;
+  }
+  if (rb_info.err_msg.length() > 0) {
+    lderr(cct) << __func__ << (rc < 0 ? " ERROR: " : " Warning: ") << rb_info.err_msg << dendl;
+    return -EINVAL;
+  }
 
   // get ready to swap pgs
   while (true) {
@@ -4985,7 +4997,7 @@ const int OSDMap::balance_primaries(
     vector<int> up_osds;
     vector<int> acting_osds;
     int up_primary, acting_primary;
-    for (auto & [pg, mapped] : prim_pgs_to_check) {
+    for (const auto & [pg, mapped] : prim_pgs_to_check) {
       // fill in the up, up primary, acting, and acting primary for the current PG
       tmp_osd_map.pg_to_up_acting_osds(pg, &up_osds, &up_primary,
 	  &acting_osds, &acting_primary);
@@ -5035,9 +5047,15 @@ const int OSDMap::balance_primaries(
   }
 
   // get read balance score after balancing
-  tmp_osd_map.calc_read_balance_score(cct, pid, &rb_info);
-  float read_balance_score_after = rb_info.adjusted_score;
-  ceph_assert(read_balance_score_after >= 0);
+  float read_balance_score_after = 0.0;
+  rc = tmp_osd_map.calc_read_balance_score(cct, pid, &rb_info);
+  if (rc >= 0) {
+    read_balance_score_after = rb_info.adjusted_score;
+  }
+  if (rb_info.err_msg.length() > 0) {
+    lderr(cct) << __func__ << (rc < 0 ? " ERROR: " : " Warning: ") << rb_info.err_msg << dendl;
+    return -EINVAL;
+  }
 
   // Tally total number of changes
   int num_changes = 0;
@@ -5053,13 +5071,15 @@ const int OSDMap::balance_primaries(
   return num_changes;
 }
 
-const map<uint64_t,float> OSDMap::calc_desired_primary_distribution(
+int OSDMap::calc_desired_primary_distribution(
   CephContext *cct,
   int64_t pid,
-  const vector<uint64_t> &osds)
+  const vector<uint64_t> &osds,
+  std::map<uint64_t, float>& desired_primary_distribution) const
 {
-  map<uint64_t,float> desired_primary_distribution; // will return a perfect distribution of floats
-				                    // without calculating the floor of each value
+  // will return a perfect distribution of floats
+  // without calculating the floor of each value
+  //
   // This function only handles replicated pools.
   const pg_pool_t* pool = get_pg_pool(pid);
   if (pool->is_replicated()) {
@@ -5072,27 +5092,34 @@ const map<uint64_t,float> OSDMap::calc_desired_primary_distribution(
 
     // First calculate the distribution using primary affinity and tally up the sum
     auto distribution_sum = 0.0;
-    for (auto& osd : osds) {
+    for (const auto & osd : osds) {
       float osd_primary_count = ((float)pgs_by_osd[osd].size() / (float)replica_count) * get_primary_affinityf(osd);
       desired_primary_distribution.insert({osd, osd_primary_count});
       distribution_sum += osd_primary_count;
     }
+    if (distribution_sum <= 0) {
+      lderr(cct) << __func__ << " Unable to calculate primary distribution, likely because primary affinity is"
+	                    << " set to 0 on all OSDs." << dendl;
+      return -EINVAL;
+    }
+
     // Then, stretch the value (necessary when primary affinity is smaller than 1)
     float factor = (float)pool->get_pg_num() / (float)distribution_sum;
     float distribution_sum_desired = 0.0;
 
     ceph_assert(factor >= 1.0);
-    for (auto & [osd, osd_primary_count] : desired_primary_distribution) {
+    for (const auto & [osd, osd_primary_count] : desired_primary_distribution) {
       desired_primary_distribution[osd] *= factor;
       distribution_sum_desired += desired_primary_distribution[osd];
     }
     ceph_assert(fabs(distribution_sum_desired - pool->get_pg_num()) < 0.01);
   } else {
-    ldout(cct, 20) << __func__ <<" skipping erasure pool "
+    lderr(cct) << __func__ <<" skipping erasure pool "
                    << get_pool_name(pid) << dendl;
+    return -EINVAL;
   }
 
-  return desired_primary_distribution;
+  return 0;
 }
 
 int OSDMap::calc_pg_upmaps(
