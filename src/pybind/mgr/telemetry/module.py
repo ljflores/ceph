@@ -836,7 +836,7 @@ class Module(MgrModule):
                 # Split the collection to avoid redundancy in final report; i.e.:
                 #   bluestore.kv_flush_lat, bluestore.kv_final_lat -->
                 #   bluestore: kv_flush_lat, kv_final_lat
-                col_0, col_1 = collection.split('.')
+                col_0, col_1 = collection.replace("::", ".").split('.', 1)
 
                 # Debug log for empty keys. This initially was a problem for prioritycache
                 # perf counters, where the col_0 was empty for certain mon counters:
