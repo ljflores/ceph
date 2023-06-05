@@ -1,5 +1,7 @@
 overrides:
   ceph:
+    log-ignorelist:
+    - \(POOL_APP_NOT_ENABLED\)
     conf:
       osd:
         osd_class_load_list: "*"
