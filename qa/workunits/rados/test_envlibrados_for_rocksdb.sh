@@ -60,7 +60,7 @@ fi
 pushd $(dirname /home/ubuntu/cephtest/clone.client.0/qa/workunits/rados/bash.sh)/../../../
 git submodule update --init src/rocksdb
 popd
-git clone $(dirname /home/ubuntu/cephtest/clone.client.0/qa/workunits/rados/bash.sh)/../../../src/rocksdb rocksdb
+git clone https://github.com/ceph/rocksdb.git rocksdb
 
 # compile code
 cd rocksdb
