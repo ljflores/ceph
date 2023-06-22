@@ -459,6 +459,20 @@
         ...
 }
 {
+        rocksdb FileSystem
+        Memcheck:Leak
+        ...
+        fun:*rocksdb*FileSystem*
+        ...
+}
+{
+        rocksdb error handler
+        Memcheck:Leak
+        ...
+        fun:*static_initialization_and_destruction*
+        ...
+}
+{
 	libstdc++ leak on xenial
 	Memcheck:Leak
 	fun:malloc
