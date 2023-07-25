@@ -459,6 +459,36 @@
         ...
 }
 {
+        centos 9 rocksdb Filesystem
+        Memcheck:Leak
+        ...
+        fun:*rocksdb*FileSystem*
+        ...
+}
+{
+        centos 9 static initialization and destruction
+        Memcheck:Leak
+        ...
+        fun:*__static_initialization_and_destruction_0*
+        ...
+}
+{
+        centos 9 startup
+        Memcheck:Leak
+        ...
+        fun:malloc
+        fun:strdup
+        fun:*dl*
+        ...
+}
+{
+        centos 9 unknown inlined fun
+        Memcheck:Leak
+        ...
+        fun:UnknownInlinedFun
+        ...
+}
+{
 	libstdc++ leak on xenial
 	Memcheck:Leak
 	fun:malloc
