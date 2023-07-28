@@ -826,3 +826,109 @@ std::vector<int> get_mapping(
   return out;
 }
 
+TEST_F(CRUSHTest, 4_host_8_6_ec_choose_leaf) {
+  cluster_test_spec_t spec{8, 4, 4, 4, 14};
+  auto [rootno, c] = create_crush_heirarchy(cct, spec);
+
+  auto ruleno = c->add_rule(-1, 6, pg_pool_t::TYPE_ERASURE);
+  EXPECT_EQ(0, c->set_rule_step_set_chooseleaf_tries(ruleno, 0, 5));
+  EXPECT_EQ(0, c->set_rule_step_set_choose_tries(ruleno, 1, 100));
+  EXPECT_EQ(0, c->set_rule_step_take(ruleno, 2, rootno));
+  EXPECT_EQ(
+    0,
+    c->set_rule_step_choose_indep(ruleno, 3, spec.num_hosts_mapped, HOST_TYPE));
+  EXPECT_EQ(
+    0,
+    c->set_rule_step_choose_leaf_indep(
+      ruleno, 4, spec.num_mapped_per_host, OSD_TYPE));
+  EXPECT_EQ(0, c->set_rule_step_emit(ruleno, 5));
+
+  auto weights_all_in = create_weight_vector(spec);
+  auto before = get_mapping(spec, *c, weights_all_in, ruleno);
+
+  /* The folowing case exhibits a bug with steps like
+   *
+   * step chooseleaf indep 4 type osd
+   *
+   * where chooseleaf indep is used with the leaf type (osd).
+   * The cause appears to be that crush_choose_indep fills in
+   * out2 prior to checking whether the item is out.  If it
+   * exhausts ftotal (ftotal >= tries), any out osds placed into
+   * out2 will still be there and will be picked up by the caller.
+   *
+   * If the bucket has enough non-out osds, this won't generally
+   * be a problem provided that it finds them prior to running
+   * out of ftotal.
+   *
+   * One workaround is to use
+   *
+   * step choose indep 4 type osd
+   *
+   * instead.  The output should be the same, but it avoids setting
+   * recurse_to_leaf.
+   *
+   * See bug https://tracker.ceph.com/issues/62213
+   */
+#if 0
+  auto weights_host_out = create_weight_vector_first_host_out(spec, before);
+  auto after_host_out = get_mapping(spec, *c, weights_host_out, ruleno);
+
+  compare_mappings(
+    spec, before, after_host_out, mapping_change_t::FAILURE,
+    {0, spec.num_mapped_per_host});
+  compare_mappings(
+    spec, before, after_host_out, mapping_change_t::SAME,
+    {spec.num_mapped_per_host, spec.num_mapped_size});
+#endif
+
+  auto weights_osd_out = create_weight_vector_first_osd_out(spec, before);
+  auto after_osd_out = get_mapping(spec, *c, weights_osd_out, ruleno);
+
+  compare_mappings(
+    spec, before, after_osd_out, mapping_change_t::SAME_HOST,
+    {0, 1});
+  compare_mappings(
+    spec, before, after_osd_out, mapping_change_t::SAME,
+    {1, spec.num_mapped_size});
+}
+
+TEST_F(CRUSHTest, 4_host_8_6_ec_choose) {
+  cluster_test_spec_t spec{8, 4, 4, 4, 14};
+  auto [rootno, c] = create_crush_heirarchy(cct, spec);
+
+  auto ruleno = c->add_rule(-1, 6, pg_pool_t::TYPE_ERASURE);
+  EXPECT_EQ(0, c->set_rule_step_set_chooseleaf_tries(ruleno, 0, 5));
+  EXPECT_EQ(0, c->set_rule_step_set_choose_tries(ruleno, 1, 100));
+  EXPECT_EQ(0, c->set_rule_step_take(ruleno, 2, rootno));
+  EXPECT_EQ(
+    0,
+    c->set_rule_step_choose_indep(ruleno, 3, spec.num_hosts_mapped, HOST_TYPE));
+  EXPECT_EQ(
+    0,
+    c->set_rule_step_choose_indep(
+      ruleno, 4, spec.num_mapped_per_host, OSD_TYPE));
+  EXPECT_EQ(0, c->set_rule_step_emit(ruleno, 5));
+
+  auto weights_all_in = create_weight_vector(spec);
+  auto before = get_mapping(spec, *c, weights_all_in, ruleno);
+
+  auto weights_host_out = create_weight_vector_first_host_out(spec, before);
+  auto after_host_out = get_mapping(spec, *c, weights_host_out, ruleno);
+
+  compare_mappings(
+    spec, before, after_host_out, mapping_change_t::FAILURE,
+    {0, spec.num_mapped_per_host});
+  compare_mappings(
+    spec, before, after_host_out, mapping_change_t::SAME,
+    {spec.num_mapped_per_host, spec.num_mapped_size});
+
+  auto weights_osd_out = create_weight_vector_first_osd_out(spec, before);
+  auto after_osd_out = get_mapping(spec, *c, weights_osd_out, ruleno);
+
+  compare_mappings(
+    spec, before, after_osd_out, mapping_change_t::SAME_HOST,
+    {0, 1});
+  compare_mappings(
+    spec, before, after_osd_out, mapping_change_t::SAME,
+    {1, spec.num_mapped_size});
+}
