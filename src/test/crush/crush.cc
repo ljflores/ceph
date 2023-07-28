@@ -932,3 +932,117 @@ TEST_F(CRUSHTest, 4_host_8_6_ec_choose) {
     spec, before, after_osd_out, mapping_change_t::SAME,
     {1, spec.num_mapped_size});
 }
+
+#define ENABLE_MULTI_STEP_OUT_HOST_TESTS 0
+/* The following test cases exhibit a behavior with rules that contain
+ * multiple choose steps where crush will not retry an earlier step if
+ * the bucket contains only out OSDs.
+ *
+ * See https://tracker.ceph.com/issues/62214 */
+
+TEST_F(CRUSHTest, 5_host_8_6_ec_choose) {
+  cluster_test_spec_t spec{8, 5, 4, 4, 14};
+  auto [rootno, c] = create_crush_heirarchy(cct, spec);
+
+  auto ruleno = c->add_rule(-1, 6, pg_pool_t::TYPE_ERASURE);
+  EXPECT_EQ(0, c->set_rule_step_set_chooseleaf_tries(ruleno, 0, 5));
+  EXPECT_EQ(0, c->set_rule_step_set_choose_tries(ruleno, 1, 100));
+  EXPECT_EQ(0, c->set_rule_step_take(ruleno, 2, rootno));
+  EXPECT_EQ(
+    0,
+    c->set_rule_step_choose_indep(ruleno, 3, spec.num_hosts_mapped, HOST_TYPE));
+  EXPECT_EQ(
+    0,
+    c->set_rule_step_choose_indep(
+      ruleno, 4, spec.num_mapped_per_host, OSD_TYPE));
+  EXPECT_EQ(0, c->set_rule_step_emit(ruleno, 5));
+
+  auto weights_all_in = create_weight_vector(spec);
+  auto before = get_mapping(spec, *c, weights_all_in, ruleno);
+  for (auto i : before) { spec.validate_osd(i); }
+
+  /* Doesn't work, marking all of the OSDs on the host out doesn't cause
+   * the 'step choose indep 4 host' step to retry.
+   * See https://tracker.ceph.com/issues/62214 */
+#if ENABLE_MULTI_STEP_OUT_HOST_TESTS
+  auto weights_host_out = create_weight_vector_first_host_out(spec, before);
+  auto after_host_out = get_mapping(spec, *c, weights_host_out, ruleno);
+
+  compare_mappings(
+    spec, before, after_host_out, mapping_change_t::NEW_HOST,
+    {0, spec.num_mapped_per_host});
+  compare_mappings(
+    spec, before, after_host_out, mapping_change_t::SAME,
+    {spec.num_mapped_per_host, spec.num_mapped_size});
+#endif
+
+  auto weights_osd_out = create_weight_vector_first_osd_out(spec, before);
+  auto after_osd_out = get_mapping(spec, *c, weights_osd_out, ruleno);
+
+  compare_mappings(
+    spec, before, after_osd_out, mapping_change_t::SAME_HOST,
+    {0, 1});
+  compare_mappings(
+    spec, before, after_osd_out, mapping_change_t::SAME,
+    {1, spec.num_mapped_size});
+}
+
+TEST_F(CRUSHTest, 4_host_2_choose_rule_rep) {
+  cluster_test_spec_t spec{3, 4, 3, 1, 3};
+  auto [rootno, c] = create_crush_heirarchy(cct, spec);
+
+  auto ruleno = c->add_rule(-1, 4, pg_pool_t::TYPE_REPLICATED);
+  EXPECT_EQ(0, c->set_rule_step_take(ruleno, 0, rootno));
+  EXPECT_EQ(
+    0, c->set_rule_step_choose_firstn(ruleno, 1, spec.num_hosts_mapped, HOST_TYPE));
+  EXPECT_EQ(
+    0,
+    c->set_rule_step_choose_firstn(
+      ruleno, 2, 1, OSD_TYPE));
+  EXPECT_EQ(0, c->set_rule_step_emit(ruleno, 3));
+
+  auto weights_all_in = create_weight_vector(spec);
+  auto before = get_mapping(spec, *c, weights_all_in, ruleno);
+  for (auto i : before) { spec.validate_osd(i); }
+
+  /* Doesn't work, marking all of the OSDs on the host out doesn't cause
+   * the 'step choose firstn 3 host' step to retry.
+   * See https://tracker.ceph.com/issues/62214 */
+#if ENABLE_MULTI_STEP_OUT_HOST_TESTS
+  auto weights_host_out = create_weight_vector_first_host_out(spec, before);
+  auto after_host_out = get_mapping(spec, *c, weights_host_out, ruleno);
+  EXPECT_EQ(before.size(), after_host_out.size());
+#endif
+
+  auto weights_osd_out = create_weight_vector_first_osd_out(spec, before);
+  auto after_osd_out = get_mapping(spec, *c, weights_osd_out, ruleno);
+  EXPECT_EQ(before.size(), after_osd_out.size());
+}
+
+TEST_F(CRUSHTest, 4_host_chooseleaf_rule_rep) {
+  /* This is similar to the above test, but with a single chooseleaf
+   * rather than two choose steps.  In this case, CRUSH correctly
+   * chooses another host once all of the OSDs on the first have
+   * been marked out because the root->host and host->osd traversals
+   * are both handled by the single chooseleaf step.
+   * See https://tracker.ceph.com/issues/62214 */
+  cluster_test_spec_t spec{3, 4, 3, 1, 3};
+  auto [rootno, c] = create_crush_heirarchy(cct, spec);
+
+  auto ruleno = c->add_rule(-1, 3, pg_pool_t::TYPE_REPLICATED);
+  EXPECT_EQ(0, c->set_rule_step_take(ruleno, 0, rootno));
+  EXPECT_EQ(
+    0,
+    c->set_rule_step_choose_leaf_firstn(
+      ruleno, 1, spec.num_hosts_mapped, HOST_TYPE));
+  EXPECT_EQ(0, c->set_rule_step_emit(ruleno, 2));
+
+  auto weights_all_in = create_weight_vector(spec);
+  auto before = get_mapping(spec, *c, weights_all_in, ruleno);
+  for (auto i : before) { spec.validate_osd(i); }
+
+  auto weights_host_out = create_weight_vector_first_host_out(spec, before);
+  auto after_host_out = get_mapping(spec, *c, weights_host_out, ruleno);
+
+  EXPECT_EQ(before.size(), after_host_out.size());
+}
