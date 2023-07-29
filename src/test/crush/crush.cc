@@ -18,6 +18,7 @@
 #include "include/stringify.h"
 
 #include "crush/CrushWrapper.h"
+#include "crush/CrushCompiler.h"
 #include "osd/osd_types.h"
 
 using namespace std;
@@ -968,6 +969,14 @@ TEST_F(CRUSHTest, 5_host_8_6_ec_choose) {
   auto weights_host_out = create_weight_vector_first_host_out(spec, before);
   auto after_host_out = get_mapping(spec, *c, weights_host_out, ruleno);
 
+  CrushCompiler cc{*c, std::cout};
+  cc.decompile(std::cout);
+
+  fmt::print("weights_all_in: {}\n", fmt::join(weights_all_in, ", "));
+  fmt::print("weights_host_out: {}\n", fmt::join(weights_host_out, ", "));
+  fmt::print("before: {}\n", fmt::join(before, ", "));
+  fmt::print("after_host_out: {}\n", fmt::join(after_host_out, ", "));
+
   compare_mappings(
     spec, before, after_host_out, mapping_change_t::NEW_HOST,
     {0, spec.num_mapped_per_host});
@@ -1011,6 +1020,15 @@ TEST_F(CRUSHTest, 4_host_2_choose_rule_rep) {
 #if ENABLE_MULTI_STEP_OUT_HOST_TESTS
   auto weights_host_out = create_weight_vector_first_host_out(spec, before);
   auto after_host_out = get_mapping(spec, *c, weights_host_out, ruleno);
+
+  CrushCompiler cc{*c, std::cout};
+  cc.decompile(std::cout);
+
+  fmt::print("weights_all_in: {}\n", fmt::join(weights_all_in, ", "));
+  fmt::print("weights_host_out: {}\n", fmt::join(weights_host_out, ", "));
+  fmt::print("before: {}\n", fmt::join(before, ", "));
+  fmt::print("after_host_out: {}\n", fmt::join(after_host_out, ", "));
+
   EXPECT_EQ(before.size(), after_host_out.size());
 #endif
 
