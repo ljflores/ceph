@@ -332,6 +332,7 @@ class Module(MgrModule):
         super(Module, self).__init__(*args, **kwargs)
         self.event = Event()
 
+    #Found the balancer status command
     @CLIReadCommand('balancer status')
     def show_status(self) -> Tuple[int, str, str]:
         """
