@@ -1063,6 +1063,7 @@ start_osd() {
             wconf <<EOF
 [osd.$osd]
         host = $HOSTNAME
+        crush_location = "root=default host=$HOSTNAME-$osd"
 EOF
             if [ "$spdk_enabled" -eq 1 ]; then
                 wconf <<EOF
