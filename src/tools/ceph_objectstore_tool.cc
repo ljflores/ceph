@@ -3351,7 +3351,7 @@ int main(int argc, char **argv)
 {
   string dpath, jpath, pgidstr, op, file, mountpoint, mon_store_path, object;
   string target_data_path, fsid;
-  string objcmd, arg1, arg2, type, format, argnspace, pool, rmtypestr, dump_data_dir;
+  string objcmd, arg1, arg2, type, format, argnspace, pool, rmtypestr, dump_data_dir, key_oid;
   boost::optional<std::string> nspace;
   spg_t pgid;
   unsigned epoch = 0;
@@ -3406,6 +3406,9 @@ int main(int argc, char **argv)
       "Threshold (in seconds) to consider omap listing slow (for op=list-slow-omap)")
     ("dump-data-dir", po::value<string>(&dump_data_dir),
      "Directory to dump object data (for op=dump-export)")
+    ("get-attrs", po::value<string>(&key_oid), "Get the object's attributes")
+    ("set-attrs", po::value<string>(&key_oid), "Set an object’s attributes")
+    ("rm-attrs", po::value<string>(&key_oid), "Remove an object’s attributes")
     ;
 
   po::options_description positional("Positional options");
