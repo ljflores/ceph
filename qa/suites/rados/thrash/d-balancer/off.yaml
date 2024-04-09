@@ -1,0 +1,8 @@
+tasks:
+- exec:
+    mon.a:
+      - ceph config set mgr mgr/balancer/log_level debug
+      - ceph balancer status
+      - ceph balancer off
+      - ceph balancer status
+      - ceph balancer status detail
