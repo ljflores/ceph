@@ -1103,6 +1103,7 @@ class Module(MgrModule):
                 elif 'optimal_score' in p['read_balance']:
                     if p['read_balance']['score_acting'] == p['read_balance']['optimal_score']:
                         replicated_pools_with_optimal_score.append(p['pool_name'])
+        self.log.info("made it here, 1")
         for pool in pools:
             if pool not in crush_rule_by_pool_name:
                 self.log.debug('pool %s does not exist' % pool)
@@ -1126,8 +1127,10 @@ class Module(MgrModule):
                 if p['pool_name'] == pool:
                     pool_id = p['pool']
                     break
+            self.log.info("balancing pool {}".format(pool))
             num_changes = plan.osdmap.balance_primaries(pool_id, inc)
             total_num_changes += num_changes
+        self.log.info("made it here, 2")
         if total_num_changes < 0:
             self.no_optimization_needed = True
             self.log.debug('unable to balance reads.')
