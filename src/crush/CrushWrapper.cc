@@ -975,6 +975,7 @@ int CrushWrapper::verify_upmap(CephContext *cct,
 
     case CRUSH_RULE_CHOOSE_FIRSTN:
     case CRUSH_RULE_CHOOSE_INDEP:
+    case CRUSH_RULE_CHOOSE_MSR:
       {
         int numrep = curstep->arg1;
         int type = curstep->arg2;
@@ -985,6 +986,7 @@ int CrushWrapper::verify_upmap(CephContext *cct,
           break;
         set<int> parents_of_type;
         for (auto osd : up) {
+	  ldout(cct, 1) << __func__ << " up osd." << osd << dendl;
           auto parent = get_parent_of_type(osd, type, rule_id);
           if (parent < 0) {
             parents_of_type.insert(parent);
