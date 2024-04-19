@@ -186,6 +186,47 @@ TEST_P(IndepTest, basic) {
   }
 }
 
+TEST_P(IndepTest, verify_multi_choose) {
+  // Based on https://tracker.ceph.com/issues/51729
+  std::unique_ptr<CrushWrapper> c(build_indep_map(cct, 3, 3, 3));
+  c->dump_tree(&cout, nullptr);
+  {
+    Formatter *f = Formatter::create("json-pretty");
+    f->open_object_section("crush_map");
+    c->dump_rules(f);
+    f->close_section();
+    f->flush(cout);
+  }
+  int ret = 0;
+  int ruleno = 1;
+  int stepno = 0;
+  int rootno = -1;
+  if (!GetParam().is_msr()) {
+    ret = c->add_rule(ruleno, 5, CRUSH_RULE_TYPE_ERASURE);
+    ceph_assert(ret == ruleno);
+    ret = c->set_rule_step(ruleno, stepno++, CRUSH_RULE_TAKE, rootno, 0);
+    ceph_assert(ret == 0);
+    ret = c->set_rule_step(
+        ruleno, stepno++, CRUSH_RULE_CHOOSE_INDEP, 3, 3);
+    ceph_assert(ret == 0);
+    ret = c->set_rule_step(
+        ruleno, stepno++, CRUSH_RULE_CHOOSE_INDEP, 3, 1);
+    ceph_assert(ret == 0);
+    ret = c->set_rule_step(
+        ruleno, stepno++, CRUSH_RULE_CHOOSELEAF_INDEP, 1, 0);
+    ceph_assert(ret == 0);
+    ret = c->set_rule_step(ruleno, stepno++, CRUSH_RULE_EMIT, 0, 0);
+    ceph_assert(ret == 0);
+  }
+  {
+    Formatter *f = Formatter::create("json-pretty");
+    f->open_object_section("crush_map");
+    c->dump_rules(f);
+    f->close_section();
+    f->flush(cout);
+  }
+}
+
 TEST_P(IndepTest, single_out_first) {
   std::unique_ptr<CrushWrapper> c(build_indep_map(cct, 3, 3, 3));
   c->dump_tree(&cout, nullptr);
