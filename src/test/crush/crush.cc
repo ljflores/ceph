@@ -197,7 +197,7 @@ TEST_P(IndepTest, verify_multi_choose) {
   int stepno = 0;
   int rootno = -1;
   if (GetParam().is_msr()) {
-    ret = c->add_rule(ruleno, 4, CRUSH_RULE_TYPE_MSR_INDEP);
+    ret = c->add_rule(ruleno, 5, CRUSH_RULE_TYPE_MSR_INDEP);
     ceph_assert(ret == ruleno);
     ret = c->set_rule_step(ruleno, stepno++, CRUSH_RULE_TAKE, rootno, 0);
     ceph_assert(ret == 0);
@@ -206,6 +206,9 @@ TEST_P(IndepTest, verify_multi_choose) {
     ceph_assert(ret == 0);
     ret = c->set_rule_step(
         ruleno, stepno++, CRUSH_RULE_CHOOSE_MSR, 3, 1);
+    ceph_assert(ret == 0);
+    ret = c->set_rule_step(
+        ruleno, stepno++, CRUSH_RULE_CHOOSE_MSR, 1, 0);
     ceph_assert(ret == 0);
     ret = c->set_rule_step(ruleno, stepno++, CRUSH_RULE_EMIT, 0, 0);
     ceph_assert(ret == 0);
