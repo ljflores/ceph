@@ -129,6 +129,8 @@
   can lead to data shuffling, as the new crush changes may necessitate data
   redistribution. In contrast, a stretch rule with a single-take configuration
   will not cause any data movement during the upgrade process.
+* RGW: Added support for the `RestrictPublicBuckets` property of the S3 `PublicAccessBlock`
+  configuration.
 
 >=19.2.1
 
