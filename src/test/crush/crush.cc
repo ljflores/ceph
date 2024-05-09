@@ -188,10 +188,32 @@ TEST_P(IndepTest, basic) {
 
 TEST_P(IndepTest, verify_multi_choose) {
   // Based on https://tracker.ceph.com/issues/51729
+  // crush map with 3 racks, 3 hosts, 3 osds
   std::unique_ptr<CrushWrapper> c(build_indep_map(cct, 3, 3, 3));
   c->dump_tree(&cout, nullptr);
 
   // create new multi-choose crush rule
+  /*
+   * Regular indep:
+  rule 1 {
+        type erasure
+        step take root
+        step choose indep 3 type rack
+        step choose indep 3 type host
+        step chooseleaf indep 1 type osd
+        step emit
+  }
+
+  * MSR indep:
+  rule 1 {
+        type msr_indep
+        step take root
+        step choosemsr indep 3 type rack
+        step choosemsr indep 3 type host
+        step choosemsr indep 1 type osd
+        step emit
+  }
+  */
   int ret = 0;
   int ruleno = 1;
   int stepno = 0;
@@ -240,14 +262,16 @@ TEST_P(IndepTest, verify_multi_choose) {
     vector<__u32> weight(c->get_max_devices(), 0x10000);
     vector<int> out;
     vector<int> out2;
+    int seed = 5;
+    int default_ruleno = 0;
 
     // verify the default rule (0)
-    c->do_rule(0, x, out, 5, weight, 0);
-    ASSERT_EQ(c->verify_upmap(cct, 0, 5, out),0);
+    c->do_rule(0, x, out, 9, weight, 0);
+    ASSERT_EQ(c->verify_upmap(cct, default_ruleno, seed, out),0);
 
     // verify the multi choose rule (1)
-    c->do_rule(1, x, out2, 5, weight, 0);
-    ASSERT_EQ(c->verify_upmap(cct, 1, 5, out2),0);
+    c->do_rule(1, x, out2, 9, weight, 0);
+    ASSERT_EQ(c->verify_upmap(cct, ruleno, seed, out2),0);
   }
 }
 
