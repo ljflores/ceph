@@ -770,6 +770,74 @@ TEST_P(FirstnTest, out_progressive) {
   cout << tchanged << " total changed" << std::endl;
 }
 
+TEST_P(FirstnTest, verify_stretch_rule) {
+  std::unique_ptr<CrushWrapper> c(build_firstn_map(cct, 3, 3, 3));
+  c->dump_tree(&cout, nullptr);
+
+  int ret = 0;
+  int ruleno = 1;
+  int stepno = 0;
+  int rootno = -1;
+
+  if (GetParam().is_msr()) {
+    ret = c->add_rule(ruleno, 6, CRUSH_RULE_TYPE_MSR_FIRSTN);
+    ceph_assert(ret == ruleno);
+    ret = c->set_rule_step(ruleno, stepno++, CRUSH_RULE_TAKE, rootno, 0);
+    ceph_assert(ret == 0);
+    ret = c->set_rule_step(
+        ruleno, stepno++, CRUSH_RULE_CHOOSE_MSR, 2, 1);
+    ceph_assert(ret == 0);
+    ret = c->set_rule_step(ruleno, stepno++, CRUSH_RULE_EMIT, 0, 0);
+    ceph_assert(ret == 0);
+    ret = c->set_rule_step(ruleno, stepno++, CRUSH_RULE_TAKE, rootno, 0);
+    ceph_assert(ret == 0);
+    ret = c->set_rule_step(
+        ruleno, stepno++, CRUSH_RULE_CHOOSE_MSR, 2, 1);
+    ceph_assert(ret == 0);
+    ret = c->set_rule_step(ruleno, stepno++, CRUSH_RULE_EMIT, 0, 0);
+    ceph_assert(ret == 0);
+  } else {
+    ret = c->add_rule(ruleno, 6, CRUSH_RULE_TYPE_REPLICATED);
+    ceph_assert(ret == ruleno);
+    ret = c->set_rule_step(ruleno, stepno++, CRUSH_RULE_TAKE, rootno, 0);
+    ceph_assert(ret == 0);
+    ret = c->set_rule_step(
+        ruleno, stepno++, CRUSH_RULE_CHOOSELEAF_FIRSTN, 2, 1);
+    ceph_assert(ret == 0);
+    ret = c->set_rule_step(ruleno, stepno++, CRUSH_RULE_EMIT, 0, 0);
+    ceph_assert(ret == 0);
+    ret = c->set_rule_step(ruleno, stepno++, CRUSH_RULE_TAKE, rootno, 0);
+    ceph_assert(ret == 0);
+    ret = c->set_rule_step(
+        ruleno, stepno++, CRUSH_RULE_CHOOSELEAF_FIRSTN, 2, 1);
+    ceph_assert(ret == 0);
+    ret = c->set_rule_step(ruleno, stepno++, CRUSH_RULE_EMIT, 0, 0);
+    ceph_assert(ret == 0);
+  }
+
+  Formatter *f = Formatter::create("json-pretty");
+  f->open_object_section("crush_map");
+  c->dump_rules(f);
+  f->close_section();
+  f->flush(cout);
+
+  for (int x = 0; x < 100; ++x) {
+    vector<__u32> weight(c->get_max_devices(), 0x10000);
+    vector<int> out;
+    vector<int> out2;
+    int seed = 5;
+    int default_ruleno = 0;
+
+    // verify the default rule (0)
+    c->do_rule(0, x, out, 9, weight, 0);
+    ASSERT_EQ(c->verify_upmap(cct, default_ruleno, seed, out),0);
+
+    // verify the multi choose rule (1)
+    c->do_rule(1, x, out2, 9, weight, 0);
+    ASSERT_EQ(c->verify_upmap(cct, ruleno, seed, out2),0);
+  }
+}
+
 INSTANTIATE_TEST_SUITE_P(
   FirstnTest,
   FirstnTest,
