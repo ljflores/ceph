@@ -266,11 +266,11 @@ TEST_P(IndepTest, verify_multi_choose) {
     int default_ruleno = 0;
 
     // verify the default rule (0)
-    c->do_rule(0, x, out, 9, weight, 0);
+    c->do_rule(default_ruleno, x, out, 9, weight, 0);
     ASSERT_EQ(c->verify_upmap(cct, default_ruleno, seed, out),0);
 
     // verify the multi choose rule (1)
-    c->do_rule(1, x, out2, 9, weight, 0);
+    c->do_rule(ruleno, x, out2, 9, weight, 0);
     ASSERT_EQ(c->verify_upmap(cct, ruleno, seed, out2),0);
   }
 }
@@ -829,11 +829,11 @@ TEST_P(FirstnTest, verify_stretch_rule) {
     int default_ruleno = 0;
 
     // verify the default rule (0)
-    c->do_rule(0, x, out, 9, weight, 0);
+    c->do_rule(default_ruleno, x, out, 9, weight, 0);
     ASSERT_EQ(c->verify_upmap(cct, default_ruleno, seed, out),0);
 
     // verify the multi choose rule (1)
-    c->do_rule(1, x, out2, 9, weight, 0);
+    c->do_rule(ruleno, x, out2, 9, weight, 0);
     ASSERT_EQ(c->verify_upmap(cct, ruleno, seed, out2),0);
   }
 }
