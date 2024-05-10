@@ -175,6 +175,7 @@ TEST_P(IndepTest, basic) {
   for (int x = 0; x < 100; ++x) {
     vector<int> out;
     c->do_rule(0, x, out, 5, weight, 0);
+    ASSERT_EQ(c->verify_upmap(cct, 0, 5, out),0);
     cout << x << " -> " << out << std::endl;
     int num_none = 0;
     for (unsigned i=0; i<out.size(); ++i) {
@@ -283,6 +284,7 @@ TEST_P(IndepTest, single_out_first) {
     vector<__u32> weight(c->get_max_devices(), 0x10000);
     vector<int> out;
     c->do_rule(0, x, out, 5, weight, 0);
+    ASSERT_EQ(c->verify_upmap(cct, 0, 5, out),0);
 
     int num_none = 0;
     for (unsigned i=0; i<out.size(); ++i) {
@@ -297,6 +299,7 @@ TEST_P(IndepTest, single_out_first) {
 
     vector<int> out2;
     c->do_rule(0, x, out2, 5, weight, 0);
+    ASSERT_EQ(c->verify_upmap(cct, 0, 5, out),0);
 
     cout << "input " << x
 	 << " marked out " << out[0]
@@ -323,6 +326,7 @@ TEST_P(IndepTest, single_out_last) {
     vector<__u32> weight(c->get_max_devices(), 0x10000);
     vector<int> out;
     c->do_rule(0, x, out, 5, weight, 0);
+    ASSERT_EQ(c->verify_upmap(cct, 0, 5, out),0);
 
     int num_none = 0;
     for (unsigned i=0; i<out.size(); ++i) {
@@ -338,6 +342,7 @@ TEST_P(IndepTest, single_out_last) {
 
     vector<int> out2;
     c->do_rule(0, x, out2, 5, weight, 0);
+    ASSERT_EQ(c->verify_upmap(cct, 0, 5, out2),0);
 
     cout << "input " << x
 	 << " marked out " << out[0]
@@ -371,6 +376,7 @@ TEST_P(IndepTest, out_alt) {
   for (int x = 0; x < 100; ++x) {
     vector<int> out;
     c->do_rule(0, x, out, 9, weight, 0);
+    ASSERT_EQ(c->verify_upmap(cct, 0, 5, out),0);
     cout << x << " -> " << out << std::endl;
     int num_none = 0;
     for (unsigned i=0; i<out.size(); ++i) {
@@ -396,6 +402,7 @@ TEST_P(IndepTest, out_contig) {
   for (int x = 0; x < 100; ++x) {
     vector<int> out;
     c->do_rule(0, x, out, 7, weight, 0);
+    ASSERT_EQ(c->verify_upmap(cct, 0, 5, out),0);
     cout << x << " -> " << out << std::endl;
     int num_none = 0;
     for (unsigned i=0; i<out.size(); ++i) {
@@ -422,6 +429,7 @@ TEST_P(IndepTest, out_progressive) {
     for (unsigned i=0; i<weight.size(); ++i) {
       vector<int> out;
       c->do_rule(0, x, out, 7, weight, 0);
+      ASSERT_EQ(c->verify_upmap(cct, 0, 5, out),0);
       cout << "(" << i << "/" << weight.size() << " out) ";
       if (i > 0) cout << "marked out " << i - 1 << " ";
       cout << x << " -> " << out << std::endl;
@@ -578,6 +586,7 @@ TEST_P(FirstnTest, basic) {
   for (int x = 0; x < 100; ++x) {
     vector<int> out;
     c->do_rule(0, x, out, 3, weight, 0);
+    ASSERT_EQ(c->verify_upmap(cct, 0, 5, out),0);
     cout << x << " -> " << out << std::endl;
     for (unsigned i=0; i<out.size(); ++i) {
       EXPECT_NE(out[i], CRUSH_ITEM_NONE);
@@ -595,6 +604,7 @@ TEST_P(FirstnTest, toosmall) {
   for (int x = 0; x < 100; ++x) {
     vector<int> out;
     c->do_rule(0, x, out, 5, weight, 0);
+    ASSERT_EQ(c->verify_upmap(cct, 0, 5, out),0);
     cout << x << " -> " << out << std::endl;
     for (unsigned i=0; i<out.size(); ++i) {
       EXPECT_NE(out[i], CRUSH_ITEM_NONE);
@@ -612,6 +622,7 @@ TEST_P(FirstnTest, single_out_first) {
     vector<__u32> weight(c->get_max_devices(), 0x10000);
     vector<int> out;
     c->do_rule(0, x, out, 3, weight, 0);
+    ASSERT_EQ(c->verify_upmap(cct, 0, 5, out),0);
 
     for (unsigned i=0; i<out.size(); ++i) {
       EXPECT_NE(out[i], CRUSH_ITEM_NONE);
@@ -624,6 +635,7 @@ TEST_P(FirstnTest, single_out_first) {
 
     vector<int> out2;
     c->do_rule(0, x, out2, 3, weight, 0);
+    ASSERT_EQ(c->verify_upmap(cct, 0, 5, out),0);
 
     cout << "input " << x
 	 << " marked out " << out[0]
@@ -653,6 +665,7 @@ TEST_P(FirstnTest, single_out_last) {
     vector<__u32> weight(c->get_max_devices(), 0x10000);
     vector<int> out;
     c->do_rule(0, x, out, 3, weight, 0);
+    ASSERT_EQ(c->verify_upmap(cct, 0, 5, out),0);
 
     for (unsigned i=0; i<out.size(); ++i) {
       EXPECT_NE(out[i], CRUSH_ITEM_NONE);
@@ -665,6 +678,7 @@ TEST_P(FirstnTest, single_out_last) {
 
     vector<int> out2;
     c->do_rule(0, x, out2, 3, weight, 0);
+    ASSERT_EQ(c->verify_upmap(cct, 0, 5, out),0);
 
     cout << "input " << x
 	 << " marked out " << out[0]
@@ -700,6 +714,7 @@ TEST_P(FirstnTest, out_alt) {
   for (int x = 0; x < 100; ++x) {
     vector<int> out;
     c->do_rule(0, x, out, 9, weight, 0);
+    ASSERT_EQ(c->verify_upmap(cct, 0, 5, out),0);
     cout << x << " -> " << out << std::endl;
     ASSERT_EQ(9, out.size());
     ASSERT_EQ(0, get_num_dups(out));
@@ -723,6 +738,7 @@ TEST_P(FirstnTest, out_contig) {
   for (int x = 0; x < 100; ++x) {
     vector<int> out;
     c->do_rule(0, x, out, 7, weight, 0);
+    ASSERT_EQ(c->verify_upmap(cct, 0, 5, out),0);
     cout << x << " -> " << out << std::endl;
     ASSERT_EQ(6, out.size());
     ASSERT_EQ(0, get_num_dups(out));
@@ -745,6 +761,7 @@ TEST_P(FirstnTest, out_progressive) {
     for (unsigned i=0; i<weight.size(); ++i) {
       vector<int> out;
       c->do_rule(0, x, out, 7, weight, 0);
+      ASSERT_EQ(c->verify_upmap(cct, 0, 5, out),0);
       cout << "(" << i << "/" << weight.size() << " out) ";
       if (i > 0) cout << "marked out " << i - 1 << " ";
       cout << x << " -> " << out << std::endl;
