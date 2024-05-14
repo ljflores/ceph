@@ -931,6 +931,7 @@ int CrushWrapper::verify_upmap(CephContext *cct,
   }
   int root_bucket = 0;
   int cursor = 0;
+  int total_numrep = 1;
   std::map<int, int> type_stack;
   for (unsigned step = 0; step < rule->len; ++step) {
     auto curstep = &rule->steps[step];
@@ -948,6 +949,7 @@ int CrushWrapper::verify_upmap(CephContext *cct,
         int type = curstep->arg2;
         if (numrep <= 0)
           numrep += pool_size;
+	total_numrep *= numrep;
         type_stack.emplace(type, numrep);
         if (type == 0) // osd
           break;
@@ -981,6 +983,7 @@ int CrushWrapper::verify_upmap(CephContext *cct,
         int type = curstep->arg2;
         if (numrep <= 0)
           numrep += pool_size;
+	total_numrep *= numrep;
         type_stack.emplace(type, numrep);
         if (type == 0) // osd
           break;
@@ -996,10 +999,10 @@ int CrushWrapper::verify_upmap(CephContext *cct,
                           << dendl;
           }
         }
-        if ((int)parents_of_type.size() > numrep) {
-          lderr(cct) << __func__ << " number of buckets "
+	if ((int)parents_of_type.size() > total_numrep) {
+          cout << __func__ << " number of buckets "
                      << parents_of_type.size() << " exceeds desired " << numrep
-                     << dendl;
+                     << " in step " << step << std::endl;
           return -EINVAL;
         }
       }
