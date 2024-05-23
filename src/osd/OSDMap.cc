@@ -3274,7 +3274,7 @@ void OSDMap::encode(ceph::buffer::list& bl, uint64_t features) const
       encode(last_up_change, bl);
       encode(last_in_change, bl);
     }
-    if (v >= 10) {
+    if (v >= 9) {
       encode(pg_upmap_primaries, bl);
     } else {
       ceph_assert(pg_upmap_primaries.empty());
