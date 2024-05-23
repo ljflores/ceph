@@ -71,32 +71,39 @@ openstack:
     size: 30 # GB
 tasks:
 - sequential:
-    - print: "****  testing12 started installing v18.2.0... "
+    - print: "****  testing12 started installing v18.2.1... "
     - install:
-        tag: v18.2.0
-    - print: "**** testing12 finished v18.2.0 install"
+        tag: v18.2.1
+    - print: "**** testing12 finished v18.2.1 install"
     - ceph:
        fs: xfs
        add_osds_to_crush: true
 
-    - print: "**** testing12 adding primary mapping..."
+    - print: "**** testing12 adding and removing primary mapping..."
+    - workunit:
+        clients:
+          client.0:
+            - test_primary_mapping_and_remove.sh
+    - print: "**** testing12 done adding and removing primary mapping..."
+
+    #######  upgrade to v18.2.2
+    - print: "**** testing12 started reef upgrade to v18.2.2"
+    - install.upgrade:
+        #exclude_packages: ['ceph-mgr','libcephfs2','libcephfs-devel','libcephfs-dev']
+        mon.a:
+          tag: v18.2.2
+        mon.b:
+          tag: v18.2.2
+    - parallel:
+       - upgrade-sequence_reef
+    - print: "**** testing12 finished reef upgrade to v18.2.2"
+
+    - print: "**** testing12 adding primary mapping after upgrade..."
     - workunit:
         clients:
           client.0:
             - test_primary_mapping.sh
-    - print: "**** testing12 done adding primary mapping..."
-
-    #######  upgrade to v18.2.1
-    - print: "**** testing12 started reef upgrade to v18.2.1"
-    - install.upgrade:
-        #exclude_packages: ['ceph-mgr','libcephfs2','libcephfs-devel','libcephfs-dev']
-        mon.a:
-          tag: v18.2.1
-        mon.b:
-          tag: v18.2.1
-    - parallel:
-       - upgrade-sequence_reef
-    - print: "**** testing12 finished reef upgrade to v18.2.2"
+    - print: "**** testing12 done adding primary mapping after upgrade..."
 
 upgrade-sequence_reef:
    sequential:
