@@ -98,6 +98,13 @@ tasks:
        - upgrade-sequence_reef
     - print: "**** testing12 finished reef upgrade to v18.2.2"
 
+    - print: "**** testing12 adding primary mapping after upgrade..."
+    - workunit:
+        clients:
+          client.0:
+            - test_primary_mapping.sh
+    - print: "**** testing12 done adding primary mapping after upgrade..."
+
 upgrade-sequence_reef:
    sequential:
    - print: "**** done branch: reef install.upgrade"
