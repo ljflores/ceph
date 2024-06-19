@@ -1044,7 +1044,9 @@ class Module(MgrModule):
             elif plan.mode == 'crush-compat':
                 return self.do_crush_compat(cast(MsPlan, plan))
             elif plan.mode == 'read':
-                return self.do_read_balancing(plan)
+                r, detail = self.do_read_balancing(plan)
+                self.log.info("read mode results: {} {}".format(r, detail))
+                return r, detail
             elif plan.mode == 'upmap-read':
                 r_upmap, detail_upmap = self.do_upmap(plan)
                 r_read, detail_read = self.do_read_balancing(plan)
