@@ -458,6 +458,15 @@
         ...
 }
 {
+        centos 9 rocksdb FileSystem
+        Memcheck:Leak
+        ...
+        fun:rocksdb*AddFactoryEntry*
+        ...
+        fun:*__static_initialization_and_destruction_0*
+        ...
+}
+{
 	libstdc++ leak on xenial
 	Memcheck:Leak
 	fun:malloc
