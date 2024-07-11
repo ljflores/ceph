@@ -475,7 +475,7 @@
         fun:(below main)
 }
 {
-        <insert_a_suppression_name_here>
+        rocksdb ObjectLibraryDefaultEv centos 9 leak
         Memcheck:Leak
         match-leak-kinds: reachable
         fun:_Znam
@@ -485,7 +485,6 @@
         fun:__libc_start_main@@GLIBC_2.34
         fun:(below main)
 }
-
 {
 	libstdc++ leak on xenial
 	Memcheck:Leak
