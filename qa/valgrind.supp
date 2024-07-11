@@ -486,6 +486,16 @@
         fun:(below main)
 }
 {
+        rocksdb static_initalization_and_destruction centos 9 leak
+        Memcheck:Leak
+        match-leak-kinds: reachable
+        fun:_Znam
+        fun:_Z41__static_initialization_and_destruction_0ii.constprop.140
+        fun:_sub_I_65535_0.0
+        fun:__libc_start_main@@GLIBC_2.34
+        fun:(below main)
+}
+{
 	libstdc++ leak on xenial
 	Memcheck:Leak
 	fun:malloc
