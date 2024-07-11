@@ -26,8 +26,8 @@ overrides:
       - \(SLOW_OPS\)
       - slow request
     valgrind:
-      mon: [--tool=memcheck, --leak-check=full, --show-reachable=yes --gen-suppressions=all]
-      osd: [--tool=memcheck --gen-suppressions=all]
-      mds: [--tool=memcheck --gen-suppressions=all]
+      mon: [--tool=memcheck, --leak-check=full, --show-reachable=yes --gen-suppressions=yes]
+      osd: [--tool=memcheck --gen-suppressions=yes]
+      mds: [--tool=memcheck --gen-suppressions=yes]
 # https://tracker.ceph.com/issues/38621
 #      mgr: [--tool=memcheck]
