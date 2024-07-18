@@ -132,7 +132,7 @@ def get_valgrind_args(testdir, name, preamble, v, exit_on_first_error=True, cd=T
     if exit_on_first_error:
         extra_args.extend([
             # at least Valgrind 3.14 is required
-            '--exit-on-first-error=yes',
+            '--exit-on-first-error=no',
             '--error-exitcode=42',
         ])
     args = []
