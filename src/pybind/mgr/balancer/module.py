@@ -1021,6 +1021,7 @@ class Module(MgrModule):
         plan.pg_status = info
         self.log.debug('unknown %f degraded %f inactive %f misplaced %g',
                        unknown, degraded, inactive, misplaced)
+        flags_set = plan.osdmap_dump.get('flags_set', [])
         if unknown > 0.0:
             detail = 'Some PGs (%f) are unknown; try again later' % unknown
             self.log.info(detail)
@@ -1036,6 +1037,11 @@ class Module(MgrModule):
         elif misplaced >= max_misplaced:
             detail = 'Too many objects (%f > %f) are misplaced; ' \
                      'try again later' % (misplaced, max_misplaced)
+            self.log.info(detail)
+            return -errno.EAGAIN, detail
+        elif 'norebalance' in flags_set:
+            detail = 'Unable to balance because norebalance flag is set; ' \
+                     'unset flag to allow balancing'
             self.log.info(detail)
             return -errno.EAGAIN, detail
         else:
