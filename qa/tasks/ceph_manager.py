@@ -2049,7 +2049,7 @@ class CephManager:
             '0')
 
     def wait_run_admin_socket(self, service_type,
-                              service_id, args=['version'], timeout=75, stdout=None):
+                              service_id, args=['version'], timeout=1000, stdout=None):
         """
         If osd_admin_socket call succeeds, return.  Otherwise wait
         five seconds and try again.
