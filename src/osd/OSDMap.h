@@ -1593,6 +1593,18 @@ private: // Bunch of internal functions used only by calc_pg_upmaps (result of c
     std::map<pg_t, mempool::osdmap::vector<std::pair<int32_t,int32_t>>>& to_upmap
   );
 
+  bool try_upmap(CephContext *cct,
+    const std::vector<pg_t>& pg_chunk,
+    const OSDMap& tmp_osd_map,
+    std::map<int,float>& osd_deviation,
+    const std::set<int>& overfull,      ///< osds we'd want to evacuate
+    const std::vector<int>& underfull,  ///< osds to move to, in order of preference
+    const std::vector<int>& more_underfull,  ///< less full osds to move to, in order of preference
+    int osd,
+    std::map<int,std::set<pg_t>>& temp_pgs_by_osd,
+    std::map<pg_t, mempool::osdmap::vector<std::pair<int32_t,int32_t>>>& to_upmap
+  );
+
 typedef std::vector<std::pair<pg_t, mempool::osdmap::vector<std::pair<int, int>>>>
   candidates_t;
 

@@ -41,6 +41,7 @@
 #include "common/pick_address.h"
 
 using std::list;
+using std::lock_guard;
 using std::make_pair;
 using std::map;
 using std::multimap;
@@ -50,6 +51,7 @@ using std::pair;
 using std::set;
 using std::string;
 using std::stringstream;
+using std::thread;
 using std::unordered_map;
 using std::vector;
 
@@ -2908,6 +2910,81 @@ void OSDMap::pg_to_raw_upmap(pg_t pg, vector<int>*raw,
   _apply_upmap(*pool, pg, raw_upmap);
 }
 
+bool OSDMap::try_upmap(CephContext *cct,
+                       const vector<pg_t>& pg_chunk,
+		       const OSDMap& tmp_osd_map,
+		       map<int,float>& osd_deviation,
+		       const set<int>& overfull,      ///< osds we'd want to evacuate
+		       const vector<int>& underfull,  ///< osds to move to, in order of preference
+		       const vector<int>& more_underfull,  ///< less full osds to move to, in order of preference
+		       int osd,
+		       map<int,set<pg_t>>& temp_pgs_by_osd,
+		       map<pg_t, mempool::osdmap::vector<pair<int32_t,int32_t>>>& to_upmap)
+{
+  for (auto pg : pg_chunk) {
+    //TODO: lock resources
+    //std::lock_guard l(___);
+    auto temp_it = tmp_osd_map.pg_upmap.find(pg);
+    if (temp_it != tmp_osd_map.pg_upmap.end()) {
+      // leave pg_upmap alone
+      // it must be specified by admin since balancer does not
+      // support pg_upmap yet
+      ldout(cct, 10) << " " << pg << " already has pg_upmap "
+		     << temp_it->second << ", skipping"
+		     << dendl;
+      continue;
+    }
+    auto pg_pool_size = tmp_osd_map.get_pg_pool_size(pg);
+    mempool::osdmap::vector<pair<int32_t,int32_t>> new_upmap_items;
+    set<int> existing;
+    auto it = tmp_osd_map.pg_upmap_items.find(pg);
+    if (it != tmp_osd_map.pg_upmap_items.end()) {
+      auto& um_items = it->second;
+      if (um_items.size() >= (size_t)pg_pool_size) {
+	ldout(cct, 10) << " " << pg << " already has full-size pg_upmap_items "
+		       << um_items << ", skipping"
+		       << dendl;
+	continue;
+      } else {
+	ldout(cct, 10) << " " << pg << " already has pg_upmap_items "
+		       << um_items
+		       << dendl;
+	new_upmap_items = um_items;
+	// build existing too (for dedup)
+	for (auto [um_from, um_to] : um_items) {
+	  existing.insert(um_from);
+	  existing.insert(um_to);
+	}
+      }
+      // fall through
+      // to see if we can append more remapping pairs
+    }
+    ldout(cct, 10) << " trying " << pg << dendl;
+    vector<int> raw, orig, out;
+    tmp_osd_map.pg_to_raw_upmap(pg, &raw, &orig); // including existing upmaps too
+    if (!try_pg_upmap(cct, pg, overfull, underfull, more_underfull, &orig, &out)) {
+      continue;
+    }
+    ldout(cct, 10) << " " << pg << " " << orig << " -> " << out << dendl;
+    if (orig.size() != out.size()) {
+      continue;
+    }
+    ceph_assert(orig != out);
+    int pos = find_best_remap(cct, orig, out, existing, osd_deviation);
+    if (pos != -1) {
+      // append new remapping pairs slowly
+      // This way we can make sure that each tiny change will
+      // definitely make distribution of PGs converging to
+      // the perfect status.
+      add_remap_pair(cct, orig[pos], out[pos], pg, (size_t)pg_pool_size,
+                     osd, existing, temp_pgs_by_osd,
+                     new_upmap_items, to_upmap);
+      return true;
+    }
+  }
+  return false;
+}
+
 void OSDMap::pg_to_raw_up(pg_t pg, vector<int> *up, int *primary) const
 {
   const pg_pool_t *pool = get_pg_pool(pg.pool());
@@ -5667,65 +5744,24 @@ int OSDMap::calc_pg_upmaps(
 	goto test_change;
 
       // try upmap
-      for (auto pg : pgs) {
-        auto temp_it = tmp_osd_map.pg_upmap.find(pg);
-        if (temp_it != tmp_osd_map.pg_upmap.end()) {
-          // leave pg_upmap alone
-          // it must be specified by admin since balancer does not
-          // support pg_upmap yet
-	  ldout(cct, 10) << " " << pg << " already has pg_upmap "
-                         << temp_it->second << ", skipping"
-                         << dendl;
-	  continue;
-	}
-        auto pg_pool_size = tmp_osd_map.get_pg_pool_size(pg);
-        mempool::osdmap::vector<pair<int32_t,int32_t>> new_upmap_items;
-        set<int> existing;
-        auto it = tmp_osd_map.pg_upmap_items.find(pg);
-        if (it != tmp_osd_map.pg_upmap_items.end()) {
-	  auto& um_items = it->second;
-          if (um_items.size() >= (size_t)pg_pool_size) {
-            ldout(cct, 10) << " " << pg << " already has full-size pg_upmap_items "
-                           << um_items << ", skipping"
-                           << dendl;
-            continue;
-          } else {
-            ldout(cct, 10) << " " << pg << " already has pg_upmap_items "
-                           << um_items
-                           << dendl;
-            new_upmap_items = um_items;
-            // build existing too (for dedup)
-            for (auto [um_from, um_to] : um_items) {
-              existing.insert(um_from);
-              existing.insert(um_to);
-            }
-	  }
-          // fall through
-          // to see if we can append more remapping pairs
-	}
-	ldout(cct, 10) << " trying " << pg << dendl;
-        vector<int> raw, orig, out;
-        tmp_osd_map.pg_to_raw_upmap(pg, &raw, &orig); // including existing upmaps too
-	if (!try_pg_upmap(cct, pg, overfull, underfull, more_underfull, &orig, &out)) {
-	  continue;
-	}
-	ldout(cct, 10) << " " << pg << " " << orig << " -> " << out << dendl;
-	if (orig.size() != out.size()) {
-	  continue;
-	}
-	ceph_assert(orig != out);
-	int pos = find_best_remap(cct, orig, out, existing, osd_deviation);
-	if (pos != -1) {
-          // append new remapping pairs slowly
-          // This way we can make sure that each tiny change will
-          // definitely make distribution of PGs converging to
-          // the perfect status.
-	  add_remap_pair(cct, orig[pos], out[pos], pg, (size_t)pg_pool_size, 
-	  		 osd, existing, temp_pgs_by_osd,
-			 new_upmap_items, to_upmap);
-          goto test_change;
-	}
+      uint64_t num_threads = 2; // Determine number of threads (TODO: remove 2 as a placeholder - std::thread::hardware_concurrency()?)
+      uint64_t chunk_size = std::ceil(pgs.size() / num_threads); // Calculate chunk size
+      vector<vector<pg_t>> pg_chunks;
+      for (uint64_t i = 0; i < pgs.size(); i += chunk_size) {
+	pg_chunks.push_back(vector<pg_t>(pgs.begin() + i, pgs.begin() + std::min(i + chunk_size, pgs.size())));
       }
+      bool added_remap_pair = false;
+      // TODO: launch multiple threads with the following function
+      for (const auto& pg_chunk : pg_chunks) {
+        added_remap_pair = try_upmap(cct, pg_chunk, tmp_osd_map, osd_deviation, overfull, underfull,
+	                     more_underfull, osd, temp_pgs_by_osd, to_upmap);
+      }
+
+      // TODO: join threads
+
+      if (added_remap_pair)
+	goto test_change;
+
       if (fast_aggressive) {
 	if (prev_n_changes == n_changes) {  // no changes for prev OSD
 		osd_to_skip.insert(osd);
