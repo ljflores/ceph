@@ -286,6 +286,24 @@ public:
     void complete() override {}
   }; // public as this will need to be accessible from TestTestOSDMap.cc
 
+  struct TryUpmapJob: public ParallelPGMapper::Job {
+    CephContext *cct;
+    const std::vector<pg_t>& pg_chunk;
+    const OSDMap& tmp_osd_map;
+    std::map<int,float>& osd_deviation;
+    const std::set<int>& overfull;      ///< osds we'd want to evacuate
+    const std::vector<int>& underfull;  ///< osds to move to, in order of preference
+    const std::vector<int>& more_underfull;  ///< less full osds to move to, in order of preference
+    int osd;
+    std::map<int,std::set<pg_t>>& temp_pgs_by_osd;
+    std::map<pg_t, mempool::osdmap::vector<std::pair<int32_t,int32_t>>>& to_upmap;
+    // lock resources
+    ceph::mutex try_upmap_lock = 
+      ceph::make_mutex("TryUpmapJob::try_upmap_lock");
+
+    TryUpmapJob(Ce
+  }
+
   // svc
 public:
   void create_initial() override;
