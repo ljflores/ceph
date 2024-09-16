@@ -5744,21 +5744,14 @@ int OSDMap::calc_pg_upmaps(
 	goto test_change;
 
       // try upmap
-      uint64_t num_threads = 2; // Determine number of threads (TODO: remove 2 as a placeholder - std::thread::hardware_concurrency()?)
-      uint64_t chunk_size = std::ceil(pgs.size() / num_threads); // Calculate chunk size
-      vector<vector<pg_t>> pg_chunks;
-      for (uint64_t i = 0; i < pgs.size(); i += chunk_size) {
-	pg_chunks.push_back(vector<pg_t>(pgs.begin() + i, pgs.begin() + std::min(i + chunk_size, pgs.size())));
-      }
       bool added_remap_pair = false;
-      // TODO: launch multiple threads with the following function
-      for (const auto& pg_chunk : pg_chunks) {
-        added_remap_pair = try_upmap(cct, pg_chunk, tmp_osd_map, osd_deviation, overfull, underfull,
-	                     more_underfull, osd, temp_pgs_by_osd, to_upmap);
+      // try_upmap(cct, pgs, tmp_osd_map, osd_deviation, overfull, underfull, more_underfull, osd, temp_pgs_by_osd, to_upmap);
+      {
+	TryUpmapJob job(cct, pgs, tmp_osd_map, osd_deviation, overfull, underfull, more_underfull, osd, temp_pgs_by_osd, to_unmap);
+        mapper.queue(&job, g_conf()->mon_clean_pg_upmaps_per_chunk, pgs);
+        job.wait();
       }
-
-      // TODO: join threads
-
+      
       if (added_remap_pair)
 	goto test_change;
 

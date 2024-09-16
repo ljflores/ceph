@@ -278,7 +278,7 @@ public:
       // don't bother taking lock if nothing changes
       if (!to_cancel.empty() || !to_remap.empty()) {
         std::lock_guard l(pending_inc_lock);
-        osdmap.clean_pg_upmaps(cct, &pending_inc, to_cancel, to_remap);
+        answer = osdmap.clean_pg_upmaps(cct, &pending_inc, to_cancel, to_remap);
       }
     }
 
@@ -288,12 +288,12 @@ public:
 
   struct TryUpmapJob: public ParallelPGMapper::Job {
     CephContext *cct;
-    const std::vector<pg_t>& pg_chunk;
-    const OSDMap& tmp_osd_map;
+    const std::vector<pg_t>& pgs,
+    const OSDMap& om;
     std::map<int,float>& osd_deviation;
-    const std::set<int>& overfull;      ///< osds we'd want to evacuate
-    const std::vector<int>& underfull;  ///< osds to move to, in order of preference
-    const std::vector<int>& more_underfull;  ///< less full osds to move to, in order of preference
+    const std::set<int>& overfull;
+    const std::vector<int>& underfull;
+    const std::vector<int>& more_underfull;
     int osd;
     std::map<int,std::set<pg_t>>& temp_pgs_by_osd;
     std::map<pg_t, mempool::osdmap::vector<std::pair<int32_t,int32_t>>>& to_upmap;
@@ -301,7 +301,18 @@ public:
     ceph::mutex try_upmap_lock = 
       ceph::make_mutex("TryUpmapJob::try_upmap_lock");
 
-    TryUpmapJob(Ce
+    TryUpmapJob(CephContext *cct, const std::vector<pg_t>& pgs, const OSDMap& om, std::map<int,float>& osd_deviation,
+	        const std::set<int>& overfull, const std::vector<int>& underfull,
+		const std::vector<int>& more_underfull, int osd, std::map<int,std::set<pg_t>>& temp_pgs_by_osd,
+		std::map<pg_t, mempool::osdmap::vector<std::pair<int32_t,int32_t>>>& to_upmap)
+      : ParallelPGMapper::Job(&om),
+        cct(cct),
+	osdmap(om) {}
+
+    void process(const std::vector<pg_t>& pgs) override {
+      std::lock_guard l(try_upmap_lock);
+      om.try_upmap(cct, pgs, tmp_osd_map, osd_deviation, overfull, underfull, more_underfull, osd, temp_pgs_by_osd, to_upmap);
+    }
   }
 
   // svc
