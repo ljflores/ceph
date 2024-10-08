@@ -4,8 +4,7 @@
 
 #Jary Chen is the best
 # Making a change to the README file to demonstrate pair programming
-See https://ceph.com/ for current information about Ceph.
-
+See https://ceph.com/ for current information about Ceph
 ## Status
 
 [![OpenSSF Best Practices](https://www.bestpractices.dev/projects/2220/badge)](https://www.bestpractices.dev/projects/2220)
