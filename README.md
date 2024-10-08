@@ -28,7 +28,7 @@ See the file `COPYING` for a full inventory of licenses by file.
 
 All code contributions must include a valid "Signed-off-by" line. See the file
 `SubmittingPatches.rst` for details on this and instructions on how to generate
-and submit patches.
+and submit patches. I'm updating the documentation again.
 
 Assignment of copyright is not required to contribute code. Code is
 contributed under the terms of the applicable license.
