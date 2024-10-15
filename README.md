@@ -17,7 +17,7 @@ miscellaneous code is either public domain or licensed under a BSD-style
 license.
 
 The Ceph documentation is licensed under Creative Commons Attribution Share
-Alike 3.0 (CC-BY-SA-3.0). 
+Alike 2.0 (CC-BY-SA-3.0). 
 
 Some headers included in the `ceph/ceph` repository are licensed under the GPL.
 See the file `COPYING` for a full inventory of licenses by file.
@@ -96,6 +96,15 @@ To build Ceph, follow this procedure:
        cd build
 4. Use the `ninja` buildsystem to build the development environment:
 
+       ninja -j3
+
+   > [IMPORTANT]
+   >
+   > [Ninja](https://ninja-build.org/) is the build system used by the Ceph
+   > project to build test builds.  The number of jobs used by `ninja` is 
+   > derived from the number of CPU cores of the building host if unspecified. 
+   > Use the `-j` option to limit the job number if build jobs are running 
+   > out of memory. If you attempt to run `ninja` and receive a message that 
        ninja -j3
 
    > [IMPORTANT]
@@ -273,12 +282,3 @@ found in `doc_deps.deb.txt`:
 	sudo apt-get install `cat doc_deps.deb.txt`
 
 ### Building the Documentation
-
-To build the documentation, ensure that you are in the top-level
-`/ceph` directory, and execute the build script. For example:
-
-	admin/build-doc
-
-## Reporting Issues
-
-To report an issue and view existing issues, please visit https://tracker.ceph.com/projects/ceph.
