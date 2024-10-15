@@ -1,5 +1,6 @@
 # Ceph - a scalable distributed storage system
 
+#edit - Diego
 
 # Making a change to the README file to demonstrate pair programming
 See https://ceph.com/ for current information about Ceph.
