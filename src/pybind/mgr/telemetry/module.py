@@ -444,7 +444,7 @@ class Module(MgrModule):
 
     """
     Modify gather_configs() to include values for osd_memor_target and osd_op_queue
-    in the telemetry report
+    in the telemetry repor
     """
     def gather_configs(self) -> Dict[str, List[str]]:
         # cluster config options
