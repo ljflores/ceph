@@ -478,9 +478,21 @@ class Module(MgrModule):
             'format': 'json'
         })
 
+        # if statement to check if osd mem target is available
+        if r == 0:
+            try:
+                # this is where osd mem target will land
+                dump = json.loads(outb)
+                config_values['osd_memory_target'] = dump['osd_memory_target']
+            except json.decoder.JSONDecodeError:
+                # if parsing fails, do not include osd mem target in the report
+                config_values['osd_memory_target'] = None
+
         return {
             'cluster_changed': sorted(list(cluster)),
             'active_changed': sorted(list(active)),
+            # add osd_memory_target to the report
+            'config_values': config_values
         }
 
     def anonymize_entity_name(self, entity_name:str) -> str:
