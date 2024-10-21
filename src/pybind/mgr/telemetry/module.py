@@ -442,6 +442,10 @@ class Module(MgrModule):
             'bucket_types': bucket_types,
         }
 
+    """
+    Modify gather_configs() to include values for osd_memor_target and osd_op_queue
+    in the telemetry report
+    """
     def gather_configs(self) -> Dict[str, List[str]]:
         # cluster config options
         cluster = set()
