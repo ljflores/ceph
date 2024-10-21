@@ -446,7 +446,8 @@ class Module(MgrModule):
     Modify gather_configs() to include values for osd_memor_target and osd_op_queue
     in the telemetry report.
     """
-    def gather_configs(self) -> Dict[str, List[str]]:
+    # changed return type to Union because of the new values
+    def gather_configs(self) -> Union[List[str], Dict[str, Any]]: 
         # cluster config options
         cluster = set()
         r, outb, outs = self.mon_command({
@@ -468,6 +469,15 @@ class Module(MgrModule):
         ls = self.get("modified_config_options")
         for opt in ls.get('options', {}):
             active.add(opt)
+
+        # osd memory target
+        config_values = {}
+        r, outb, outs = self.mon_command({
+            'prefix': 'osd dump',
+            'name': 'osd_memory_target',
+            'format': 'json'
+        })
+
         return {
             'cluster_changed': sorted(list(cluster)),
             'active_changed': sorted(list(active)),
