@@ -471,6 +471,26 @@ class Module(MgrModule):
             })
 
             if r != 0:
+                raise ConfigValueFetchError("Failed to fetch osd_memory_target")
+            
+            try:
+                value = json.loads(outb).get('osd_memory_target', None)
+                if value is not None:
+                    raise ConfigValueFetchError("osd_memory_target is missing")
+                return value
+            
+            except json.decoder.JSONDecodeError:
+                raise ConfigValueFetchError("Failed to parse osd_memory_target")
+            
+            except ConfigValueFetchError as e:
+                self.log.error(f"Attempt {attempt + 1} failed: {e}")
+                attempt += 1
+                # wait before retrying
+                time.sleep(retry_delay)
+
+        # if all retries fail, return None or set a default value
+        self.log.warning("Failed to fetch osd_memory_target after all retries")
+        return None
                 
         
 
