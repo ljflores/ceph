@@ -532,21 +532,14 @@ class Module(MgrModule):
 
         # osd memory target
         config_values = {}
-        r, outb, outs = self.mon_command({
-            'prefix': 'osd dump',
-            'name': 'osd_memory_target',
-            'format': 'json'
-        })
-
-        # if statement to check if osd mem target is available
-        if r == 0:
-            try:
-                # this is where osd mem target will land
-                dump = json.loads(outb)
-                config_values['osd_memory_target'] = dump['osd_memory_target']
-            except json.decoder.JSONDecodeError:
-                # if parsing fails, do not include osd mem target in the report
-                config_values['osd_memory_target'] = None
+        try:
+            osd_memory_target_value = self.fetch_osd_memory_target()
+            validated_value = self.validate_osd_memory_target(osd_memory_target_value)
+            config_values['osd_memory_target'] = validated_value
+        
+        except InvalidConfgValueError as e:
+            self.log.error(f"Invalid osd_memory_target value: {e}")
+            config_values['osd_memory_target'] = 0
 
         return {
             'cluster_changed': sorted(list(cluster)),
