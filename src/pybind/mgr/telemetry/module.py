@@ -491,8 +491,16 @@ class Module(MgrModule):
         # if all retries fail, return None or set a default value
         self.log.warning("Failed to fetch osd_memory_target after all retries")
         return None
-                
+    
+    """
+    Validates osd_memory_target value
+    """
+    def validate_osd_memory_target(self, value: Optional[int]) -> int:
+        if value is None:
+            raise InvalidConfgValueError("osd_memory_target is None")
         
+        if not isinstance(value, int) or value < 0:
+            raise InvalidConfgValueError("osd_memory_target is invalid")
 
     """
     Modify gather_configs() to include values for osd_memor_target and osd_op_queue
