@@ -1011,7 +1011,11 @@ class Module(MgrModule):
             return data[-1][1]
         else:
             return 0
-
+        
+    """
+    Modify compile_report() to include the new values for osd_memory_target and osd_op_queue
+    in the telemetry report
+    """
     def compile_report(self, channels: Optional[List[str]] = None) -> Dict[str, Any]:
         if not channels:
             channels = self.get_active_channels()
@@ -1038,9 +1042,16 @@ class Module(MgrModule):
             service_map = self.get('service_map')
             fs_map = self.get('fs_map')
             df = self.get('df')
-            df_pools = {pool['id']: pool for pool in df['pools']}
 
+            # include osd_memory_target in the report
+            config_values = report['config'].get('config_values', {})
+            if 'osd_memory_target' in config_values:
+                report['osd_memory_target'] = config_values['osd_memory_target']
+
+            
             report['created'] = mon_map['created']
+
+            df_pools = {pool['id']: pool for pool in df['pools']}
 
             # mons
             v1_mons = 0
