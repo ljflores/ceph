@@ -13,6 +13,7 @@ import json
 import rbd
 import requests
 import uuid
+import json 
 import time
 from datetime import datetime, timedelta
 from prettytable import PrettyTable
@@ -176,6 +177,18 @@ ROOK_KEYS_BY_COLLECTION : List[Tuple[str, Collection]] = [
         ("rook/cluster/network/provider", Collection.basic_rook_v01),
         ("rook/cluster/external-mode", Collection.basic_rook_v01),
 ]
+
+class ConfigValueFetchError(Exception):
+    """
+    raised when the config value fetch fails
+    """
+    pass
+
+class InvalidConfgValueError(Exception):
+    """
+    raised when the config value is invalid
+    """
+    pass
 
 class Module(MgrModule):
     metadata_keys = [
@@ -441,6 +454,25 @@ class Module(MgrModule):
             'bucket_sizes': bucket_sizes,
             'bucket_types': bucket_types,
         }
+    
+    """
+    Fetches the osd_memory_target value from the osd dump
+    """
+    def fetch_osd_memory_target(self) -> Optional[int]:
+        max_retries = 3
+        retry_delay = 5
+        attempt = 0
+
+        while attempt < max_retries:
+            r, outb, outs = self.mon_command({
+                'prefix': 'config get',
+                'name': 'osd_memory_target',
+                'format': 'json'
+            })
+
+            if r != 0:
+                
+        
 
     """
     Modify gather_configs() to include values for osd_memor_target and osd_op_queue
