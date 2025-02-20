@@ -117,6 +117,18 @@
   for mirroring. The public APIs -- C++ `mirror_image_resync()`,
   C `rbd_mirror_image_resync()`, and Python `Image.mirror_image_resync()` --
   will return EINVAL instead of ENOENT when mirroring is not enabled.
+* RGW: PutObjectLockConfiguration can now be used to enable S3 Object Lock on an
+  existing versioning-enabled bucket that was not created with Object Lock enabled.
+
+* RADOS: The ceph df command reports incorrect MAX AVAIL for stretch mode pools when
+  CRUSH rules use multiple take steps for datacenters. PGMap::get_rule_avail
+  incorrectly calculates available space from only one datacenter.
+  As a workaround, define CRUSH rules with take default and choose firstn 0 type
+  datacenter. See https://tracker.ceph.com/issues/56650#note-6 for details.
+  Upgrading a cluster configured with a crush rule with multiple take steps
+  can lead to data shuffling, as the new crush changes may necessitate data
+  redistribution. In contrast, a stretch rule with a single-take configuration
+  will not cause any data movement during the upgrade process.
 
 >=19.2.1
 
