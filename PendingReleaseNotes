@@ -171,6 +171,11 @@
 * CephFS: The ``ceph fs subvolume snapshot getpath`` command now allows users
   to get the path of a snapshot of a subvolume. If the snapshot is not present
   ``ENOENT`` is returned.
+* RADOS: A new command, `ceph osd rm-pg-upmap-primary-all`, has been added that allows
+  users to clear all pg-upmap-primary mappings in the osdmap when desired.
+  Related trackers:
+   - https://tracker.ceph.com/issues/67179
+   - https://tracker.ceph.com/issues/66867
 
 >=19.0.0
 
