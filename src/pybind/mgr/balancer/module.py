@@ -433,7 +433,18 @@ class Module(MgrModule):
                 warn = ('Unable to apply mode {} due to unknown min_compat_client {}.'.format(mode, min_compat_client))
                 return (-errno.EPERM, '', warn)
         self.set_module_option('mode', mode.value)
-        return (0, '', '')
+
+        msg = ''
+        if (mode != Mode.upmap_read) and (mode != Mode.read):
+            if self.get_osdmap().dump().get('pg_upmap_primaries', []):
+                msg = ('NOTICE: You have switched to a mode that does not '
+                       'use pg-upmap-primary, but your osdmap '
+                       'still contains pg-upmap-primary mappings. \n\n'
+                       'If you want to remove these mappings, run `ceph osd '
+                       'rm-pg-upmap-primary-all`. \n'
+                       'Otherwise, the mappings will be retained, but read '
+                       'balancing will no longer take place.')
+        return (0, '', msg)
 
     @CLICommand('balancer on')
     def on(self) -> Tuple[int, str, str]:
