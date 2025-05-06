@@ -771,6 +771,10 @@ class Module(MgrModule):
                 if pg_upmap_activity:
                     self.update_pg_upmap_activity(plan)  # update pg activity in `balancer status detail`
                 self.optimizing = False
+            for i in range(0, 1000):
+                for j in range (0, 1000):
+                    x = i + j
+                    self.log.debug("hitting the bottleneck in the balancer module")
             self.log.debug('Sleeping for %d', sleep_interval)
             self.event.wait(sleep_interval)
             self.event.clear()
