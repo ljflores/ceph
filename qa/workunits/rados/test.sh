@@ -78,12 +78,34 @@ ret=0
 if [ $parallel -eq 1 ]; then
 for t in "${!pids[@]}"
 do
-  pid=${pids[$t]}
-  if ! wait $pid
-  then
-    echo "error in $t ($pid)"
-    ret=1
-  fi
+    # Set timeout values
+    max_wait=1800  # 30 minutes
+    waited=0
+    check_interval=10
+    pid=${pids[$t]}
+    echo "Waiting for test $t (PID $pid)..."
+    # Check in a loop with timeout
+    # kill -0 checks if the process is running
+    # and 2 >/dev/null suppresses error messages if the process is not found
+    while kill -0 $pid 2>/dev/null; do
+        sleep $check_interval
+        waited=$((waited + check_interval))
+
+        if [ $waited -ge $max_wait ]; then
+        # Process timed out
+        echo "error in $t ($pid) - TIMED OUT after $max_wait seconds"
+        kill -9 $pid 2>/dev/null || true
+        ret=1
+        break
+        fi
+    done
+    # Only wait after process has ended naturally or been killed
+    # We only call wait after determining that the process is no longer running
+    # So this won't hang indefinitely like https://tracker.ceph.com/issues/70772
+    wait $pid 2>/dev/null || {
+        echo "Test $t (PID $pid) failed with non-zero exit status"
+        ret=1
+    }
 done
 fi
 
