@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
 set -ex
 
+# Pass in the --vstart flag if you want to run this test locally.
+# For example:
+#   cd ceph/build
+#   ../qa/workunits/rados/test.sh --vstart
+
 parallel=1
 [ "$1" = "--serial" ] && parallel=0
 
@@ -10,6 +15,9 @@ crimson=0
 
 color=""
 [ -t 1 ] && color="--gtest_color=yes"
+
+vstart=0
+[ "$1" = "--vstart" ] && vstart=1
 
 function cleanup() {
     pkill -P $$ || true
@@ -21,6 +29,44 @@ mkdir -p $GTEST_OUTPUT_DIR
 
 declare -A pids
 
+if [ $vstart -eq 1 ]; then
+    # compile ceph_test_rados targets
+    for f in \
+        api_aio api_aio_pp \
+	api_io api_io_pp \
+	api_asio api_list \
+	api_lock api_lock_pp \
+	api_misc api_misc_pp \
+	api_tier_pp \
+	api_pool \
+	api_snapshots api_snapshots_pp \
+	api_stat api_stat_pp \
+	api_watch_notify api_watch_notify_pp \
+	api_cmd api_cmd_pp \
+	api_service api_service_pp \
+	api_c_write_operations \
+	api_c_read_operations \
+	list_parallel \
+	open_pools_parallel \
+	delete_pools_parallel
+    do
+        ninja -j$(nproc) ceph_test_rados_$f
+    done
+
+    # compile ceph_test_neorados targets
+    for f in \
+        cls cmd handler_error io ec_io list ec_list misc pool read_operations snapshots \
+        watch_notify write_operations
+    do
+        ninja -j$(nproc) ceph_test_neorados_$f
+    done
+
+    echo "Setting up a test cluster..."
+    ninja -j$(nproc) vstart
+    ../src/vstart.sh --debug --new -x --localhost --bluestore
+fi
+
+# run ceph_test_rados tests
 for f in \
     api_aio api_aio_pp \
     api_io api_io_pp \
@@ -40,26 +86,35 @@ for f in \
     open_pools_parallel \
     delete_pools_parallel
 do
+    executable="ceph_test_rados_$f"
+    if [ $vstart -eq 1 ]; then
+        executable="./bin/$executable"
+    fi
     if [ $parallel -eq 1 ]; then
 	r=`printf '%25s' $f`
 	ff=`echo $f | awk '{print $1}'`
-	bash -o pipefail -exc "ceph_test_rados_$f --gtest_output=xml:$GTEST_OUTPUT_DIR/$f.xml $color 2>&1 | tee ceph_test_rados_$ff.log | sed \"s/^/$r: /\"" &
+	bash -o pipefail -exc "$executable --gtest_output=xml:$GTEST_OUTPUT_DIR/$f.xml $color 2>&1 | tee ceph_test_rados_$ff.log | sed \"s/^/$r: /\"" &
 	pid=$!
 	echo "test $f on pid $pid"
 	pids[$f]=$pid
     else
-	ceph_test_rados_$f
+	$executable
     fi
 done
 
+# run ceph_test_neorados tests
 for f in \
     cls cmd handler_error io ec_io list ec_list misc pool read_operations snapshots \
     watch_notify write_operations
 do
+    executable="ceph_test_neorados_$f"
+    if [ $vstart -eq 1 ]; then
+        executable="./bin/$executable"
+    fi
     if [ $parallel -eq 1 ]; then
 	r=`printf '%25s' $f`
 	ff=`echo $f | awk '{print $1}'`
-	bash -o pipefail -exc "ceph_test_neorados_$f --gtest_output=xml:$GTEST_OUTPUT_DIR/neorados_$ff.xml $color 2>&1 | tee ceph_test_neorados_$ff.log | sed \"s/^/$r: /\"" &
+	bash -o pipefail -exc "$executable --gtest_output=xml:$GTEST_OUTPUT_DIR/neorados_$ff.xml $color 2>&1 | tee ceph_test_neorados_$ff.log | sed \"s/^/$r: /\"" &
 	pid=$!
 	echo "test $f on pid $pid"
 	pids[$f]=$pid
@@ -70,7 +125,7 @@ do
 			continue
 		fi
 	fi
-	ceph_test_neorados_$f
+	$executable
     fi
 done
 
@@ -107,6 +162,11 @@ do
         ret=1
     }
 done
+fi
+
+if [ $vstart -eq 1 ]; then
+    echo "Shutting down test cluster..."
+    ../src/stop.sh
 fi
 
 exit $ret
