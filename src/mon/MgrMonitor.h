@@ -28,6 +28,7 @@ class MgrMonitor: public PaxosService, public CommandHandler
   MgrMap map;
   MgrMap pending_map;
   bool ever_had_active_mgr = false;
+  int mgr_consecutive_unavailability_count = 0; // # of times the mgr reports consecutive unavailability
 
   std::map<std::string, ceph::buffer::list> pending_metadata;
   std::set<std::string> pending_metadata_rm;
@@ -70,6 +71,18 @@ class MgrMonitor: public PaxosService, public CommandHandler
   std::vector<health_check_map_t> prev_health_checks;
 
   bool check_caps(MonOpRequestRef op, const uuid_d& fsid);
+
+  /**
+   * Update the global variable `mgr_consecutive_unavailability_count`,
+   * which tracks how many times the mgr has been unavailable in a row.
+   */
+  void update_mgr_consecutive_unavailability();
+  /**
+   * If `mgr_consecutive_unavailability_count` passes a configurable
+   * threshold, we should issue a health warning that the mgr has been
+   * unavailable for longer than expected.
+   */
+  bool should_warn_about_mgr_unavailability();
 
   health_status_t should_warn_about_mgr_down();
 

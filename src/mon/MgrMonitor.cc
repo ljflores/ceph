@@ -279,6 +279,19 @@ void MgrMonitor::create_pending()
   pending_map.epoch++;
 }
 
+void MgrMonitor::update_mgr_consecutive_unavailability() {
+  if (!map.get_available()) {
+    mgr_consecutive_unavailability_count++;
+  } else {
+    mgr_consecutive_unavailability_count = 0;
+  }
+}
+
+bool MgrMonitor::should_warn_about_mgr_unavailability()
+{
+  return mgr_consecutive_unavailability_count > 5;
+}
+
 health_status_t MgrMonitor::should_warn_about_mgr_down()
 {
   utime_t now = ceph_clock_now();
@@ -347,6 +360,9 @@ void MgrMonitor::encode_pending(MonitorDBStore::TransactionRef t)
   pending_metadata_rm.clear();
 
   health_check_map_t next;
+  if (should_warn_about_mgr_unavailability()) {
+    next.add("MGR_UNAVAILABLE", HEALTH_WARN, "mgr stuck initializing", 0);
+  }
   if (pending_map.active_gid == 0) {
     auto level = should_warn_about_mgr_down();
     if (level != HEALTH_OK) {
@@ -460,6 +476,10 @@ bool MgrMonitor::preprocess_beacon(MonOpRequestRef op)
   auto m = op->get_req<MMgrBeacon>();
   mon.no_reply(op); // we never reply to beacons
   dout(4) << "beacon from " << m->get_gid() << dendl;
+
+  // Update mgr consecutive unavailability count
+  // even if the map has not been updated
+  update_mgr_consecutive_unavailability();
 
   if (!check_caps(op, m->get_fsid())) {
     // drop it on the floor
