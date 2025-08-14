@@ -2433,6 +2433,12 @@ int CrushWrapper::add_multi_osd_per_failure_domain_rule_at(
       return -EINVAL;
     }
   }
+  if (num_failure_domains > name_exists(failure_domain_name)) {
+    *err << "specified number of failure domains of type " << failure_domain_name
+         << " (" << num_failure_domains << ") exceeds number in cluster ("
+	 << type_map << " / " << name_map << ")";
+    return -EINVAL;
+  }
   if (device_class.size()) {
     if (!class_exists(device_class)) {
       if (err)
