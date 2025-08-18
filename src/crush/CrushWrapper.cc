@@ -2433,6 +2433,10 @@ int CrushWrapper::add_multi_osd_per_failure_domain_rule_at(
       return -EINVAL;
     }
   }
+  for (int i=0; crush->buckets[i] != nullptr; ++i) {
+    crush_bucket *b = crush->buckets[i];
+    *err << " " << b->type << " ";
+  }
   if (num_failure_domains > name_exists(failure_domain_name)) {
     *err << "specified number of failure domains of type " << failure_domain_name
          << " (" << num_failure_domains << ") exceeds number in cluster ("
