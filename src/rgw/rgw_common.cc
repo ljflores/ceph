@@ -140,6 +140,7 @@ rgw_http_errors rgw_http_s3_errors({
     { ERR_ACCOUNT_EXISTS, {409, "AccountAlreadyExists"}},
     { ERR_RESTORE_ALREADY_IN_PROGRESS, {409, "RestoreAlreadyInProgress"}},
     { ECANCELED, {409, "ConcurrentModification"}},
+    { ERR_EXPIRED_TOKEN, {400, "ExpiredToken"}},
 });
 
 rgw_http_errors rgw_http_swift_errors({
