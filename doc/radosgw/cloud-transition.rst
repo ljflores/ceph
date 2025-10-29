@@ -24,13 +24,13 @@ Cloud Storage Class Configuration
       "acls": [ { "type": <id | email | uri>,
                   "source_id": <source_id>,
                   "dest_id": <dest_id> } ... ],
+      "location_constraint": <location-constraint>,
       "target_path": <target_path>,
       "target_storage_class": <target-storage-class>,
       "multipart_sync_threshold": {object_size},
       "multipart_min_part_size": {part_size},
       "retain_head_object": <true | false>
     }
-
 
 Cloud Transition Specific Configurables:
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -83,6 +83,10 @@ A string that defines how the target path is created. The target path specifies 
 the source 'bucket-name/object-name' is appended. If not specified the target_path created is "rgwx-${zonegroup}-${storage-class}-cloud-bucket".
 
 For example: ``target_path = rgwx-archive-${zonegroup}/``
+
+* ``location_constraint`` (string)
+
+  Specifies the region where the target bucket will be created on the remote S3 endpoint. For AWS, this location needs to be specified only if the region is other than US East (us-east-1).
 
 * ``target_storage_class`` (string)
 
@@ -140,43 +144,41 @@ For example:
 
 ::
 
-    # radosgw-admin zonegroup placement add --rgw-zonegroup=default \
-                                            --placement-id=default-placement \
-                                            --storage-class=CLOUDTIER --tier-type=cloud-s3
-    [
-        {
-            "key": "default-placement",
-            "val": {
-                "name": "default-placement",
-                "tags": [],
-                "storage_classes": [
-                    "CLOUDTIER",
-                    "STANDARD"
-                ],
-                "tier_targets": [
-                    {
-                        "key": "CLOUDTIER",
-                        "val": {
-                            "tier_type": "cloud-s3",
-                            "storage_class": "CLOUDTIER",
-                            "retain_head_object": "false",
-                            "s3": {
-                                "endpoint": "",
-                                "access_key": "",
-                                "secret": "",
-                                "host_style": "path",
-                                "target_storage_class": "",
-                                "target_path": "",
-                                "acl_mappings": [],
-                                "multipart_sync_threshold": 33554432,
-                                "multipart_min_part_size": 33554432
-                            }
-                        }
-                    }
-                ]
-            }
-        }
-    ]
+  [
+      {
+          "key": "default-placement",
+          "val": {
+              "name": "default-placement",
+              "tags": [],
+              "storage_classes": [
+                  "CLOUDTIER",
+                  "STANDARD"
+              ],
+              "tier_targets": [
+                  {
+                      "key": "CLOUDTIER",
+                      "val": {
+                          "tier_type": "cloud-s3",
+                          "storage_class": "CLOUDTIER",
+                          "retain_head_object": "false",
+                          "s3": {
+                              "endpoint": "",
+                              "access_key": "",
+                              "secret": "",
+                              "host_style": "path",
+                              "location_constraint": "";
+                              "target_storage_class": "",
+                              "target_path": "",
+                              "acl_mappings": [],
+                              "multipart_sync_threshold": 33554432,
+                              "multipart_min_part_size": 33554432
+                          }
+                      }
+                  }
+              ]
+          }
+      }
+  ]
 
 
 .. note:: Once a storage class is created of ``--tier-type=cloud-s3``, it cannot be later modified to any other storage class type.
