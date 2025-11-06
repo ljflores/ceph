@@ -35,6 +35,7 @@ tasks:
         #set config option for which cls modules are allowed to be loaded / used
         osd_class_load_list: "*"
         osd_class_default_list: "*"
+    watchdog_setup:
 - print: "**** done end installing squid cephadm ..."
 
 - print: "**** done start cephadm.shell ceph config set mgr..."

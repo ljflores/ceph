@@ -5,3 +5,4 @@ tasks:
     conf:
       mon:
         auth allow insecure global id reclaim: true
+    watchdog_setup:
