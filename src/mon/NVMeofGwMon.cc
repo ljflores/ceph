@@ -695,6 +695,14 @@ bool NVMeofGwMon::prepare_beacon(MonOpRequestRef op)
 	       << map.created_gws << dendl;
       goto set_propose;
     } else {
+      if (pending_map.created_gws[group_key][gw_id].availability ==
+	  gw_availability_t::GW_DELETING) {
+	  dout(4) << "Beacon from GW in Created while in monitor's"
+	             " map it in DELETING state, ignore it"
+	          << gw_id << dendl;
+	  mon.no_reply(op);
+	  goto false_return; // not sending ack to this beacon
+      }
       dout(4) << "GW beacon: Created state - full startup done " << gw_id
 	       << " GW state in monitor data-base : "
 	       << pending_map.created_gws[group_key][gw_id].availability
