@@ -182,6 +182,25 @@ class ExportMgr:
         self._exports: Optional[Dict[str, List[Export]]] = export_ls
         self.skip_notify_nfs_server = False
 
+    def _get_cluster_protocols(self, cluster_id: str) -> List[int]:
+        """Get the list of supported NFS protocols for a cluster.
+        """
+        try:
+            import orchestrator
+            from ceph.deployment.service_spec import NFSServiceSpec
+
+            completion = self.mgr.describe_service(service_type='nfs', service_name=f'nfs.{cluster_id}')
+            services = orchestrator.raise_if_exception(completion)
+            for service in services:
+                if service.spec and isinstance(service.spec, NFSServiceSpec):
+                    spec = cast(NFSServiceSpec, service.spec)
+                    if getattr(spec, 'enable_nfsv3', False):
+                        return [3, 4]
+                    return [4]
+        except Exception as e:
+            log.debug(f"Failed to get cluster protocols for {cluster_id}: {e}, defaulting to v4 only")
+        return [4]
+
     @property
     def exports(self) -> Dict[str, List[Export]]:
         if self._exports is None:
@@ -709,6 +728,8 @@ class ExportMgr:
         pseudo_path = normalize_path(pseudo_path)
 
         if not self._fetch_export(cluster_id, pseudo_path):
+            # Get the protocols based on cluster's enable_nfsv3 setting
+            protocols = self._get_cluster_protocols(cluster_id)
             export = self.create_export_from_dict(
                 cluster_id,
                 self._gen_export_id(cluster_id),
@@ -724,7 +745,8 @@ class ExportMgr:
                     },
                     "clients": clients,
                     "sectype": sectype,
-                    "kmip_key_id": kmip_key_id
+                    "kmip_key_id": kmip_key_id,
+                    "protocols": protocols,
                 },
                 earmark_resolver
             )
@@ -758,6 +780,8 @@ class ExportMgr:
             raise ErrorResponse("Must specify either bucket or user_id")
 
         if not self._fetch_export(cluster_id, pseudo_path):
+            # Get the protocols based on cluster's enable_nfsv3 setting
+            protocols = self._get_cluster_protocols(cluster_id)
             export = self.create_export_from_dict(
                 cluster_id,
                 self._gen_export_id(cluster_id),
@@ -770,6 +794,7 @@ class ExportMgr:
                         "name": NFS_GANESHA_SUPPORTED_FSALS[1],
                         "user_id": user_id,
                     },
+                    "protocols": protocols,
                     "clients": clients,
                     "sectype": sectype,
                     "kmip_key_id": kmip_key_id
@@ -828,6 +853,10 @@ class ExportMgr:
                     new_export_dict['fsal']['cmount_path'] = old_export.fsal.cmount_path
                 else:
                     new_export_dict['fsal']['cmount_path'] = '/'
+
+        # Set protocols based on cluster's enable_nfsv3 setting if not explicitly specified
+        if 'protocols' not in new_export_dict:
+            new_export_dict['protocols'] = self._get_cluster_protocols(cluster_id)
 
         new_export = self.create_export_from_dict(
             cluster_id,
