@@ -1,7 +1,11 @@
 teuthology:
   postmerge:
+    # If rocky is selected, replace it with ubuntu.
+    #   This applies to any release < Tentacle because
+    #   rocky support only goes as far back as Tentacle.
     - |
       if yaml.os_type == "rocky" then
+        print("rocky is not supported on releases < Tentacle; replacing with ubuntu")
         yaml.os_type = "ubuntu"
         yaml.os_version = "22.04"
         yaml.ktype = "distro"
