@@ -2,7 +2,9 @@ teuthology:
   postmerge:
     - |
       if yaml.os_type == "rocky" then
-        yaml.os_type = "centos"
+        yaml.os_type = "ubuntu"
+        yaml.os_version = "22.04"
+        yaml.ktype = "distro"
       end
 overrides:
   ceph:
