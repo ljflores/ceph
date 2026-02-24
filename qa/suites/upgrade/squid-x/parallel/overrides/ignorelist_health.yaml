@@ -5,7 +5,9 @@ teuthology:
     #   rocky support only goes as far back as Tentacle.
     - |
       if yaml.os_type == "rocky" then
-        print("rocky is not supported on releases < Tentacle; replacing with ubuntu")
+        io.stderr:write(
+          "postmerge: rocky unsupported pre-Tentacle → forcing ubuntu 22.04\n"
+        )
         yaml.os_type = "ubuntu"
         yaml.os_version = "22.04"
         yaml.ktype = "distro"
