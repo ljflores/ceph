@@ -1,6 +1,9 @@
 teuthology:
   postmerge:
-    - if yaml.os_type == "rocky" then reject() end
+    - |
+      if yaml.os_type == "rocky" then
+        yaml.os_type = "centos"
+      end
 overrides:
   ceph:
     log-ignorelist:
