@@ -1,5 +1,5 @@
 teuthology:
-  postmerge:
+  premerge:
     # If rocky is selected, replace it with ubuntu.
     #   This applies to any release < Tentacle because
     #   rocky support only goes as far back as Tentacle.
