@@ -31,15 +31,14 @@ overrides:
       - OBJECT_UNFOUND
 tasks:
 - install:
-    branch: tentacle
+    branch: reef
     exclude_packages:
-      - ceph-osd-classic
       - ceph-volume
-      - ceph-osd-crimson
+      - ceph-osd-classic
 
 - cephadm:
-    image: quay.ceph.io/ceph-ci/ceph:tentacle
-    compiled_cephadm_branch: tentacle
+    image: quay.ceph.io/ceph-ci/ceph:reef
+    compiled_cephadm_branch: reef
     conf:
       osd:
         #set config option for which cls modules are allowed to be loaded / used
