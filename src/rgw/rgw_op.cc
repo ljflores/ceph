@@ -7419,6 +7419,13 @@ void RGWCompleteMultipart::execute(optional_yield y)
     return;
   }
 
+  if (!serializer->is_locked()) {
+    // lock renewal failed, it's not safe to commit the head object
+    op_ret = -ERR_INTERNAL_ERROR;
+    s->err.message = "This multipart completion is already in progress";
+    return;
+  }
+
   RGWObjVersionTracker& objv_tracker = meta_obj->get_version_tracker();
 
   using prefix_map_t = rgw::sal::MultipartUpload::prefix_map_t;
