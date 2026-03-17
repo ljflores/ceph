@@ -912,7 +912,7 @@ bool SplitOp::create(Objecter::Op *op, Objecter &objecter,
   debug_op_summary("orig_op: ", op, cct);
 
   // Reject if the operation is a snapshot operation
-  if (op->snapid != CEPH_NOSNAP || !op->snap.empty()) {
+  if (op->snapid != CEPH_NOSNAP || !op->snapc.empty()) {
     ldout(cct, DBG_LVL) << __func__ <<" REJECT: snapshot operation" << dendl;
     return false;
   }
