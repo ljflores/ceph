@@ -371,6 +371,8 @@ void Replayer<I>::init(Context* on_finish) {
   dout(10) << "remote_mirror_uuid=" << m_remote_mirror_uuid
            << ", remote_mirror_peer_uuid=" << m_remote_mirror_peer_uuid << dendl;
 
+  m_state = STATE_REPLAYING;
+
   on_finish->complete(0);
 
   m_update_group_state = true;
@@ -385,7 +387,6 @@ void Replayer<I>::validate_local_group_snapshots() {
   if (is_replay_interrupted(&locker)) {
     return;
   }
-  m_state = STATE_REPLAYING;
 
   // early exit if no snapshots to process
   if (m_local_group_snaps.empty()) {
