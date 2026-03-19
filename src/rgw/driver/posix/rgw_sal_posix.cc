@@ -1668,6 +1668,13 @@ int MPPOSIXSerializer::try_lock(const DoutPrefixProvider *dpp, ceph::timespan du
     return -ENOENT;
   }
 
+  locked = true;
+  return 0;
+}
+
+int MPPOSIXSerializer::unlock(const DoutPrefixProvider *dpp, optional_yield y)
+{
+  clear_locked();
   return 0;
 }
 
