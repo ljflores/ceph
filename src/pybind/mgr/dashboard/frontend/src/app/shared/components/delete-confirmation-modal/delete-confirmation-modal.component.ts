@@ -18,8 +18,6 @@ export class DeleteConfirmationModalComponent extends BaseModal implements OnIni
   submitButton: SubmitButtonComponent;
   deletionForm: CdFormGroup;
   impactEnum = DeletionImpact;
-  childFormGroup: CdFormGroup;
-  childFormGroupTemplate: TemplateRef<any>;
 
   constructor(
     @Optional() @Inject('impact') public impact: DeletionImpact,
@@ -36,7 +34,9 @@ export class DeleteConfirmationModalComponent extends BaseModal implements OnIni
     public submitActionObservable?: () => Observable<any>,
     @Optional()
     @Inject('callBackAtionObservable')
-    public callBackAtionObservable?: () => Observable<any>
+    public callBackAtionObservable?: () => Observable<any>,
+    @Optional() @Inject('childFormGroup') public childFormGroup?: CdFormGroup,
+    @Optional() @Inject('childFormGroupTemplate') public childFormGroupTemplate?: TemplateRef<any>
   ) {
     super();
     this.actionDescription = actionDescription || 'delete';
