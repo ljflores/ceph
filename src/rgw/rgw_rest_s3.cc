@@ -3814,7 +3814,7 @@ int RGWCopyObj_ObjStore_S3::get_params(optional_yield y)
       (s->bucket->get_tenant() == s->src_tenant_name) &&
       (s->bucket->get_name() == s->src_bucket_name) &&
       (s->object->get_name() == s->src_object->get_name()) &&
-      s->src_object->get_instance().empty() &&
+      s->src_object_key.instance.empty() &&
       (attrs_mod != rgw::sal::ATTRSMOD_REPLACE)) {
     need_to_check_storage_class = true;
   }
