@@ -1410,7 +1410,7 @@ public:
 class RGWDataSyncSingleEntryCR : public RGWCoroutine {
   RGWDataSyncCtx *sc;
   RGWDataSyncEnv *sync_env;
-  rgw::bucket_sync::Handle state; // cached bucket-shard state
+  rgw::bucket_sync::ShardHandle state; // cached bucket-shard state
   rgw_data_sync_obligation obligation; // input obligation
   std::optional<rgw_data_sync_obligation> complete; // obligation to complete
   uint32_t obligation_counter = 0;
@@ -1422,7 +1422,7 @@ class RGWDataSyncSingleEntryCR : public RGWCoroutine {
   ceph::real_time progress;
   int sync_status = 0;
 public:
-  RGWDataSyncSingleEntryCR(RGWDataSyncCtx *_sc, rgw::bucket_sync::Handle state,
+  RGWDataSyncSingleEntryCR(RGWDataSyncCtx *_sc, rgw::bucket_sync::ShardHandle state,
                            rgw_data_sync_obligation _obligation,
                            RGWDataSyncShardMarkerTrack *_marker_tracker,
                            const rgw_raw_obj& error_repo,
@@ -1625,7 +1625,7 @@ RGWCoroutine* data_sync_single_entry(RGWDataSyncCtx *sc, const rgw_bucket_shard&
                                 const std::string marker,
                                 ceph::real_time timestamp,
                                 boost::intrusive_ptr<const RGWContinuousLeaseCR> lease_cr,
-                                boost::intrusive_ptr<rgw::bucket_sync::Cache> bucket_shard_cache,
+                                boost::intrusive_ptr<rgw::bucket_sync::ShardCache> bucket_shard_cache,
                                 RGWDataSyncShardMarkerTrack* marker_tracker,
                                 rgw_raw_obj error_repo,
                                 RGWSyncTraceNodeRef& tn,
@@ -1658,7 +1658,7 @@ class RGWDataFullSyncSingleEntryCR : public RGWCoroutine {
   rgw_raw_obj error_repo;
   ceph::real_time timestamp;
   boost::intrusive_ptr<const RGWContinuousLeaseCR> lease_cr;
-  boost::intrusive_ptr<rgw::bucket_sync::Cache> bucket_shard_cache;
+  boost::intrusive_ptr<rgw::bucket_sync::ShardCache> bucket_shard_cache;
   RGWDataSyncShardMarkerTrack* marker_tracker;
   RGWSyncTraceNodeRef tn;
   rgw_bucket_index_marker_info remote_info;
@@ -1673,7 +1673,7 @@ public:
   RGWDataFullSyncSingleEntryCR(RGWDataSyncCtx *_sc, const rgw_pool& _pool, const rgw_bucket_shard& _source_bs,
                       const std::string& _key, const rgw_data_sync_status& sync_status, const rgw_raw_obj& _error_repo,
                       ceph::real_time _timestamp, boost::intrusive_ptr<const RGWContinuousLeaseCR> _lease_cr,
-                      boost::intrusive_ptr<rgw::bucket_sync::Cache> _bucket_shard_cache,
+                      boost::intrusive_ptr<rgw::bucket_sync::ShardCache> _bucket_shard_cache,
                       RGWDataSyncShardMarkerTrack* _marker_tracker,
                       RGWSyncTraceNodeRef& _tn)
     : RGWCoroutine(_sc->cct), sc(_sc), sync_env(_sc->env), pool(_pool), source_bs(_source_bs), key(_key),
@@ -1771,7 +1771,7 @@ protected:
   boost::intrusive_ptr<const RGWContinuousLeaseCR> lease_cr;
   const rgw_data_sync_status& sync_status;
   RGWObjVersionTracker& objv;
-  boost::intrusive_ptr<rgw::bucket_sync::Cache> bucket_shard_cache;
+  boost::intrusive_ptr<rgw::bucket_sync::ShardCache> bucket_shard_cache;
 
   std::optional<RGWDataSyncShardMarkerTrack> marker_tracker;
   RGWRadosGetOmapValsCR::ResultPtr omapvals;
@@ -1798,7 +1798,7 @@ protected:
     boost::intrusive_ptr<const RGWContinuousLeaseCR> lease_cr,
     const rgw_data_sync_status& sync_status,
     RGWObjVersionTracker& objv,
-    const boost::intrusive_ptr<rgw::bucket_sync::Cache>& bucket_shard_cache)
+    const boost::intrusive_ptr<rgw::bucket_sync::ShardCache>& bucket_shard_cache)
     : RGWCoroutine(_sc->cct), sc(_sc), pool(pool), shard_id(shard_id),
       sync_marker(sync_marker), tn(tn), status_oid(status_oid),
       error_repo(error_repo), lease_cr(std::move(lease_cr)),
@@ -1826,7 +1826,7 @@ public:
     const string& status_oid, const rgw_raw_obj& error_repo,
     boost::intrusive_ptr<const RGWContinuousLeaseCR> lease_cr,
     const rgw_data_sync_status& sync_status, RGWObjVersionTracker& objv,
-    const boost::intrusive_ptr<rgw::bucket_sync::Cache>& bucket_shard_cache)
+    const boost::intrusive_ptr<rgw::bucket_sync::ShardCache>& bucket_shard_cache)
     : RGWDataBaseSyncShardCR(sc, pool, shard_id, sync_marker, tn,
 			     status_oid, error_repo, std::move(lease_cr),
 			     sync_status, objv, bucket_shard_cache) {}
@@ -1984,7 +1984,7 @@ public:
     const string& status_oid, const rgw_raw_obj& error_repo,
     boost::intrusive_ptr<const RGWContinuousLeaseCR> lease_cr,
     const rgw_data_sync_status& sync_status, RGWObjVersionTracker& objv,
-    const boost::intrusive_ptr<rgw::bucket_sync::Cache>& bucket_shard_cache,
+    const boost::intrusive_ptr<rgw::bucket_sync::ShardCache>& bucket_shard_cache,
     ceph::mutex& inc_lock,
     bc::flat_set<rgw_data_notify_entry>& modified_shards)
     : RGWDataBaseSyncShardCR(sc, pool, shard_id, sync_marker, tn,
@@ -2206,8 +2206,8 @@ class RGWDataSyncShardCR : public RGWCoroutine {
 
   // target number of entries to cache before recycling idle ones
   static constexpr size_t target_cache_size = 256;
-  boost::intrusive_ptr<rgw::bucket_sync::Cache> bucket_shard_cache {
-    rgw::bucket_sync::Cache::create(target_cache_size) };
+  boost::intrusive_ptr<rgw::bucket_sync::ShardCache> bucket_shard_cache {
+    rgw::bucket_sync::ShardCache::create(target_cache_size) };
 
   boost::intrusive_ptr<RGWContinuousLeaseCR> lease_cr;
   boost::intrusive_ptr<RGWCoroutinesStack> lease_stack;
