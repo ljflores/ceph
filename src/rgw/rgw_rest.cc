@@ -1940,8 +1940,6 @@ int RGWHandler_REST::read_permissions(RGWOp* op_obj, optional_yield y)
   }
 
   return ret;
-  
-  return do_read_permissions(op_obj, only_bucket, y);
 }
 
 void RGWRESTMgr::register_resource(string resource, RGWRESTMgr *mgr)
