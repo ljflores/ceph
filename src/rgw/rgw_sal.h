@@ -96,6 +96,7 @@ struct RGWObjState {
   bool is_atomic{false};
   bool has_attrs{false};
   bool exists{false};
+  bool is_dm{false};
   uint64_t size{0}; //< size of raw object
   uint64_t accounted_size{0}; //< size before compression, encryption
   ceph::real_time mtime;
@@ -1274,6 +1275,8 @@ class Object {
     /** Mark data as compressed */
     virtual void set_compressed() = 0;
     /** Check if this object is compressed */
+    /** True if this object is a delete marker (newest version is deleted) */
+    virtual bool is_delete_marker() = 0;
     virtual bool is_compressed() = 0;
     /** Check if object is synced */
     virtual bool is_sync_completed(const DoutPrefixProvider* dpp,
@@ -1383,8 +1386,6 @@ class Object {
     virtual void set_hash_source(std::string s) = 0;
     /** Build an Object Identifier string for this object */
     virtual std::string get_oid(void) const = 0;
-    /** True if this object is a delete marker (newest version is deleted) */
-    virtual bool get_delete_marker(void) = 0;
     /** True if this object is stored in the extra data pool */
     virtual bool get_in_extra_data(void) = 0;
     /** Set the in_extra_data field */
