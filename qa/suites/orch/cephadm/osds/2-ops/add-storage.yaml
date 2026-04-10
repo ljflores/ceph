@@ -1,0 +1,9 @@
+tasks:
+- cephadm.shell:
+    host.a:
+      - |
+        set -e
+        set -x
+        ceph orch ps
+        ceph orch device ls
+        ceph orch apply osd --all-available-devices
