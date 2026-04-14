@@ -6,4 +6,4 @@ tasks:
         set -x
         ceph orch ps
         ceph orch device ls
-        ceph orch apply osd --all-available-devices
+        ceph orch apply osd -all-available-devices
