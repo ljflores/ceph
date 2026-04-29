@@ -3,6 +3,7 @@ import json
 import os
 import tempfile
 from datetime import datetime
+from typing import List
 
 import requests
 
@@ -175,6 +176,17 @@ class Prometheus(PrometheusRESTController):
     @RESTController.Collection(method='GET', path='/alertgroup')
     def get_alertgroup(self, **params):
         return self.alert_proxy('GET', '/alerts/groups', params)
+
+    @RESTController.Collection(method='PUT', path='/set_remote_write')
+    def set_remote_write(self, remote_write_url: str, remote_write_allowed_metrics: List[str]):
+        orch_client = OrchClient.instance()
+        return orch_client.monitoring.set_prometheus_remote_write(remote_write_url,
+                                                                  remote_write_allowed_metrics)
+
+    @RESTController.Collection(method='PUT', path='/remove_remote_write')
+    def remove_remote_write(self, url: str):
+        orch_client = OrchClient.instance()
+        return orch_client.monitoring.remove_prometheus_remote_write(url)
 
     @RESTController.Collection(method='GET', path='/prometheus_query_data')
     def get_prometeus_query_data(self, **params):

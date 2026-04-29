@@ -24,6 +24,14 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+def get_field_from_spec(spec: ServiceSpec, attr: str, default: Any) -> Any:
+    try:
+        value = getattr(spec, attr)
+        return value if value else default
+    except AttributeError:
+        return default
+
+
 @register_cephadm_service
 class GrafanaService(CephadmService):
     TYPE = 'grafana'
@@ -532,6 +540,9 @@ class PrometheusService(CephadmService):
             # default to disabled
             retention_size = '0'
 
+        remote_write_url = get_field_from_spec(spec, 'remote_write_url', '')
+        remote_write_allowed_metrics = get_field_from_spec(spec, 'remote_write_allowed_metrics', '')
+
         # build service discovery end-point
         security_enabled, mgmt_gw_enabled, oauth2_enabled = self.mgr._get_security_config()
         port = self.mgr.service_discovery_port
@@ -586,6 +597,8 @@ class PrometheusService(CephadmService):
             'haproxy_sd_url': haproxy_sd_url,
             'ceph_exporter_sd_url': ceph_exporter_sd_url,
             'external_prometheus_targets': targets,
+            'remote_write_url': remote_write_url,
+            'remote_write_allowed_metrics': remote_write_allowed_metrics,
             'cluster_fsid': FSID,
             'nvmeof_sd_url': nvmeof_sd_url,
             'nfs_sd_url': nfs_sd_url,
@@ -718,6 +731,12 @@ class PrometheusService(CephadmService):
         deps += [s for s in ['node-exporter', 'alertmanager'] if mgr.cache.get_daemons_by_service(s)]
         if len(mgr.cache.get_daemons_by_type('ingress')) > 0:
             deps.append('ingress')
+
+        if spec:
+            prometheus_spec = cast(PrometheusSpec, spec)
+
+            deps.append(f'remote_write_url:{prometheus_spec.remote_write_url}')
+            deps.append(f'remote_write_metrics:{prometheus_spec.remote_write_allowed_metrics}')
 
         return sorted(deps)
 
