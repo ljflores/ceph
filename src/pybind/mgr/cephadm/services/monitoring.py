@@ -692,7 +692,7 @@ class PrometheusService(CephadmService):
         r['files']['/etc/prometheus/alerting/custom_alerts.yml'] = \
             self.mgr.get_store('services/prometheus/alerting/custom_alerts.yml', '')
 
-        return r, self.get_dependencies(self.mgr)
+        return r, self.get_dependencies(self.mgr, spec=spec)
 
     @classmethod
     def get_dependencies(cls, mgr: "CephadmOrchestrator",
