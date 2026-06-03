@@ -259,6 +259,7 @@ class OrchClient(object):
         self.upgrades = UpgradeManager(self.api)
         self.hardware = HardwareManager(self.api)
         self.cert_store = CertStoreManager(self.api)
+        self.monitoring = MonitoringManager(self.api)
 
     def available(self, features: Optional[List[str]] = None) -> bool:
         available = self.status()['available']

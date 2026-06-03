@@ -11,6 +11,7 @@ from .. import mgr
 from ..exceptions import DashboardException
 from ..security import Scope
 from ..services import ceph_service
+from ..services.orchestrator import OrchClient
 from ..services.settings import SettingsService
 from ..settings import Options, Settings
 from . import APIDoc, APIRouter, BaseController, Endpoint, RESTController, Router, UIRouter
