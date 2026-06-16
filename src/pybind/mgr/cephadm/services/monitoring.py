@@ -653,22 +653,6 @@ class PrometheusService(CephadmService):
                 'use_url_prefix': mgmt_gw_enabled
             }
 
-        # check if the prometheus.yml already exists in the config-key store,
-        # if not we need to set the initial config-key with the default template content.
-        # If it already exists, we need not override user config changes.
-        config_key = 'services/prometheus/prometheus.yml'
-        existing_config = self.mgr.get_store(config_key)
-
-        if existing_config is None:
-            loader = self.mgr.template.engine.env.loader
-            assert loader is not None
-
-            raw_template, _, _ = loader.get_source(
-                self.mgr.template.engine.env,
-                'services/prometheus/prometheus.yml.j2'
-            )
-            self.mgr.set_store(config_key, raw_template)
-
         # include alerts, if present in the container
         if os.path.exists(self.mgr.prometheus_alerts_path):
             with open(self.mgr.prometheus_alerts_path, 'r', encoding='utf-8') as f:
