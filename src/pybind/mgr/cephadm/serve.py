@@ -1387,13 +1387,21 @@ class CephadmServe:
                     if any(svc in e for e in diff for svc in REDEPLOY_TRIGGERS):
                         action = 'redeploy'
                 elif dd.daemon_type == 'nfs':
-                    # check what has changed, based on that decide action
-                    only_kmip_updated = all(s.startswith('kmip') for s in list(sym_diff))
-                    if not only_kmip_updated:
-                        action = 'redeploy'
+                    # Ignore default/unset option changes (False/None).
+                    sym_diff = {
+                        dep for dep in sym_diff
+                        if ':' not in dep or dep.split(':', 1)[1].strip() not in ('False', 'None')
+                    }
+                    if not sym_diff and not self.mgr.cache.get_scheduled_daemon_action(dd.hostname, dd.name()):
+                        action = None
                     else:
-                        skip_restart_for_reconfig = True
-                        send_signal_to_daemon = 'SIGHUP'
+                        # check what has changed, based on that decide action
+                        only_kmip_updated = all(s.startswith('kmip') for s in list(sym_diff))
+                        if not only_kmip_updated:
+                            action = 'redeploy'
+                        else:
+                            skip_restart_for_reconfig = True
+                            send_signal_to_daemon = 'SIGHUP'
             elif spec is not None and hasattr(spec, 'extra_container_args') and dd.extra_container_args != spec.extra_container_args:
                 self.log.debug(
                     f'{dd.name()} container cli args {dd.extra_container_args} -> {spec.extra_container_args}')
