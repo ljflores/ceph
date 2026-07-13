@@ -56,62 +56,74 @@ KNOWN_REVIEWERS = {
     "lflores": {
         "tracker_id": 13065,
         "github_username": "ljflores",
-        "components": ["core"]
+        "components": ["core"],
+        "slack": "@Laura Flores"
     },
     "nmordech": {
         "tracker_id": 13516,
         "github_username": "NitzanMordhai",
-        "components": ["core"]
+        "components": ["core"],
+        "slack": "@Nitzan Mordechai"
     },
     "ksirivad": {
         "tracker_id": 10217,
         "github_username": "kamoltat",
-        "components": ["core"]
+        "components": ["core"],
+        "slack": "@Kamoltat (Junior) Sirivadhna"
     },
     "rfriedma": {
         "tracker_id": 10204,
         "github_username": "ronen-fr",
-        "components": ["core"]
+        "components": ["core"],
+        "slack": "@Ronen Friedman"
     },
     "amathuri": {
         "tracker_id": 12136,
         "github_username": "amathuria",
-        "components": ["core"]
+        "components": ["core"],
+        "slack": "@Aishwarya Mathuria"
     },
     "sseshasa": {
         "tracker_id": 10181,
         "github_username": "sseshasa",
-        "components": ["core"]
+        "components": ["core"],
+        "slack": "@Sridhar Seshasayee"
     },
     "shraddhaag": {
         "tracker_id": 11050,
         "github_username": "shraddhaag",
-        "components": ["core"]
+        "components": ["core"],
+        "slack": "@Shraddha Agrawal"
     },
     "naveen.naidu@ibm.com": {
         "tracker_id": 15031,
         "github_username": "Naveenaidu",
-        "components": ["core"]
+        "components": ["core"],
+        "slack": "@Naveen Naidu"
     },
     "ljsanders": {
         "tracker_id": 14634,
         "github_username": "lee-j-sanders",
-        "components": ["core"]
+        "components": ["core"],
+        "slack": "@Lee Sanders"
     },
     "JonBailey1993": {
         "tracker_id": 14872,
         "github_username": "JonBailey1993",
-        "components": ["core"]
+        "components": ["core"],
+        "slack": "@Jonathan Bailey"
     },
     "ConnorFawcett": {
         "tracker_id": 14644,
         "github_username": "connorfawcett",
-        "components": ["core"]
+        "components": ["core"],
+        "slack": "@Connor Fawcett"
     },
     "Jayaprakash.ceph": {
         "tracker_id": 15114,
         "github_username": "Jayaprakash-ibm",
-        "components": ["core"]
+        "components": ["core"],
+        "slack": "@Jaya Prakash"
     },
     # Add more reviewers here as needed
     # "username": {
@@ -172,6 +184,88 @@ def get_username_by_id(user_id):
         if info["tracker_id"] == user_id:
             return username
     return None
+
+
+def get_slack_id_by_user_id(user_id):
+    """
+    Get Slack identifier from user ID.
+    
+    Args:
+        user_id: Redmine user ID (numeric)
+    
+    Returns:
+        Slack identifier string if found, None otherwise
+    """
+    username = get_username_by_id(user_id)
+    if username:
+        info = get_reviewer_info(username)
+        if info and "slack" in info:
+            return info["slack"]
+    return None
+
+
+def generate_slack_message(new_assignments, pr_prioritized_assignments, reviewer_ids, dry_run=False):
+    """
+    Generate a Slack-formatted message for new assignments.
+    
+    Args:
+        new_assignments: Dict mapping user_id -> [issue_ids]
+        pr_prioritized_assignments: Dict mapping user_id -> [issue_ids] for PR-prioritized issues
+        reviewer_ids: List of all reviewer IDs
+        dry_run: Whether this is a dry run
+    
+    Returns:
+        String containing Slack-formatted message
+    """
+    if not new_assignments:
+        return "No new assignments to report."
+    
+    lines = []
+    
+    # Header
+    if dry_run:
+        lines.append("*QA Assignment Summary (DRY RUN)*")
+    else:
+        lines.append("*QA Assignment Summary*")
+    lines.append("")
+    
+    total_new = sum(len(issues) for issues in new_assignments.values())
+    lines.append(f"Total issues assigned: *{total_new}*")
+    lines.append("")
+    
+    # Per-reviewer assignments
+    for user_id, issue_ids in sorted(new_assignments.items()):
+        slack_id = get_slack_id_by_user_id(user_id)
+        username = get_username_by_id(user_id)
+        
+        if slack_id:
+            display_name = slack_id
+        elif username:
+            display_name = f"@{username}"
+        else:
+            display_name = f"User ID {user_id}"
+        
+        pr_count = len(pr_prioritized_assignments.get(user_id, []))
+        
+        if pr_count > 0:
+            lines.append(f"{display_name} - *{len(issue_ids)} issue(s)* ({pr_count} prioritized for PR authorship)")
+        else:
+            lines.append(f"{display_name} - *{len(issue_ids)} issue(s)*")
+        
+        for issue_id in issue_ids:
+            # Mark PR-prioritized issues with an asterisk
+            if user_id in pr_prioritized_assignments and issue_id in pr_prioritized_assignments[user_id]:
+                lines.append(f"  • <{REDMINE_ENDPOINT}/issues/{issue_id}|#{issue_id}> *")
+            else:
+                lines.append(f"  • <{REDMINE_ENDPOINT}/issues/{issue_id}|#{issue_id}>")
+        
+        lines.append("")
+    
+    # Add legend if any PR prioritizations occurred
+    if pr_prioritized_assignments:
+        lines.append("_* = Prioritized due to PR authorship_")
+    
+    return "\n".join(lines)
 
 def get_reviewer_by_github_username(github_username):
     """
@@ -272,6 +366,194 @@ log = logging.getLogger(__name__)
 log_stream = logging.StreamHandler()
 log.addHandler(log_stream)
 log.setLevel(logging.INFO)
+
+
+def show_distribution_summary(project, statuses, reviewer_ids, components=None, debug=False, slack_format=False):
+    """
+    Show current distribution of issues among reviewers without assigning.
+    
+    Args:
+        project: Redmine project identifier (e.g., "ceph-qa")
+        statuses: List of status names to filter (e.g., ["QA Needs Approval"])
+        reviewer_ids: List of Redmine user IDs to check (numeric)
+        components: Optional list of components to filter issues
+        debug: Enable debug logging
+        slack_format: If True, output in Slack-formatted message
+    """
+    if debug:
+        log.setLevel(logging.DEBUG)
+        log.debug("Debug logging enabled.")
+    
+    if not REDMINE_API_KEY:
+        log.fatal("REDMINE_API_KEY not found! Please set REDMINE_API_KEY environment variable or ~/.redmine_key.")
+        sys.exit(1)
+    
+    # Connect to Redmine
+    log.info(f"Connecting to {REDMINE_ENDPOINT}")
+    R = redminelib.Redmine(REDMINE_ENDPOINT, key=REDMINE_API_KEY)
+    log.info("Successfully connected to Redmine.")
+    
+    # Get project ID
+    try:
+        log.info(f"Fetching '{project}' project ID from Redmine.")
+        proj = R.project.get(project)
+        project_id = proj['id']
+        log.info(f"Found '{project}' project with ID: {project_id}")
+    except redminelib.exceptions.ResourceAttrError:
+        log.error(f"Project '{project}' not found in Redmine.")
+        sys.exit(1)
+    
+    # Get status IDs from status names
+    log.info("Fetching available statuses from Redmine.")
+    all_statuses = R.issue_status.all()
+    
+    if debug:
+        log.debug("Available statuses in Redmine:")
+        for status in all_statuses:
+            log.debug(f"  - '{status.name}' (ID: {status.id})")
+    
+    status_ids = []
+    for status in all_statuses:
+        if status.name in statuses:
+            status_ids.append(str(status.id))
+            log.info(f"Mapped status '{status.name}' to ID {status.id}")
+    
+    if not status_ids:
+        log.error(f"Could not find any matching status IDs for: {statuses}")
+        log.error(f"Available status names: {[s.name for s in all_statuses]}")
+        sys.exit(1)
+    
+    # Query ALL issues in target statuses
+    log.info("Querying issues in target statuses...")
+    all_issues_filter = {
+        "project_id": project_id,
+        "status_id": ",".join(status_ids),
+        "limit": 1000,
+    }
+    
+    # Add component filter if specified
+    if components:
+        all_issues_filter[f"cf_{REDMINE_CUSTOM_FIELD_ID_TAGS}"] = f"~{components[0]}"
+        log.info(f"Filtering by component(s): {', '.join(components)}")
+    
+    all_issues = list(R.issue.filter(**all_issues_filter))
+    
+    # Count current assignments for each reviewer
+    current_assignments = {user_id: [] for user_id in reviewer_ids}
+    unassigned_issues = []
+    other_assignees = {}  # Track issues assigned to non-reviewers
+    
+    for issue in all_issues:
+        # Check if issue matches any of the requested components
+        if components:
+            issue_components_str = None
+            if hasattr(issue, 'custom_fields'):
+                for cf in issue.custom_fields:
+                    if cf.id == REDMINE_CUSTOM_FIELD_ID_TAGS:
+                        issue_components_str = cf.value
+                        break
+            
+            if issue_components_str:
+                issue_components = [c.strip() for c in issue_components_str.split(',') if c.strip()]
+                # Check if first component matches any requested component
+                if issue_components and issue_components[0] not in components:
+                    continue  # Skip this issue
+            else:
+                continue  # Skip issues without components
+        
+        if hasattr(issue, 'assigned_to') and issue.assigned_to:
+            assignee_id = issue.assigned_to.id
+            if assignee_id in reviewer_ids:
+                current_assignments[assignee_id].append(issue.id)
+            else:
+                # Track other assignees
+                if assignee_id not in other_assignees:
+                    other_assignees[assignee_id] = []
+                other_assignees[assignee_id].append(issue.id)
+        else:
+            unassigned_issues.append(issue)
+    
+    # Print summary
+    if slack_format:
+        # Generate Slack-formatted message
+        lines = []
+        lines.append("*QA Assignment Status*")
+        lines.append("")
+        
+        total_tracked = sum(len(issues) for issues in current_assignments.values())
+        lines.append(f"Total issues assigned: *{total_tracked}*")
+        if unassigned_issues:
+            lines.append(f"Unassigned issues: *{len(unassigned_issues)}*")
+        lines.append("")
+        
+        # Per-reviewer assignments
+        for user_id in reviewer_ids:
+            issue_ids = current_assignments[user_id]
+            if not issue_ids:
+                continue  # Skip reviewers with no assignments
+            
+            slack_id = get_slack_id_by_user_id(user_id)
+            username = get_username_by_id(user_id)
+            
+            if slack_id:
+                display_name = slack_id
+            elif username:
+                display_name = f"@{username}"
+            else:
+                display_name = f"User ID {user_id}"
+            
+            lines.append(f"{display_name} - *{len(issue_ids)} issue(s)*")
+            for issue_id in issue_ids:
+                lines.append(f"  • {REDMINE_ENDPOINT}/issues/{issue_id}")
+            lines.append("")
+        
+        print("\n" + "="*60)
+        print("SLACK MESSAGE (copy and paste into Slack):")
+        print("="*60)
+        print("\n".join(lines))
+        print("="*60)
+    else:
+        # Regular summary output
+        log.info("\n" + "="*60)
+        log.info("Issue Distribution Summary")
+        log.info("="*60)
+        log.info(f"Project: {project}")
+        log.info(f"Status(es): {', '.join(statuses)}")
+        if components:
+            log.info(f"Component(s): {', '.join(components)}")
+        log.info("")
+        
+        total_tracked = sum(len(issues) for issues in current_assignments.values())
+        log.info(f"Total issues assigned to tracked reviewers: {total_tracked}")
+        log.info(f"Total unassigned issues: {len(unassigned_issues)}")
+        
+        if other_assignees:
+            total_other = sum(len(issues) for issues in other_assignees.values())
+            log.info(f"Total issues assigned to other users: {total_other}")
+        
+        log.info("")
+        log.info("Distribution among tracked reviewers:")
+        for user_id in reviewer_ids:
+            count = len(current_assignments[user_id])
+            username = get_username_by_id(user_id)
+            display_name = f"{username} ({user_id})" if username else f"User ID {user_id}"
+            log.info(f"  {display_name}: {count} issue(s)")
+            
+            if debug and count > 0:
+                log.debug(f"    Issues:")
+                for issue_id in current_assignments[user_id]:
+                    log.debug(f"      - {REDMINE_ENDPOINT}/issues/{issue_id}")
+        
+        if unassigned_issues:
+            log.info("")
+            log.info(f"Unassigned issues ({len(unassigned_issues)}):")
+            for issue in unassigned_issues[:10]:  # Show first 10
+                log.info(f"  - #{issue.id}: {issue.subject}")
+                log.info(f"    {REDMINE_ENDPOINT}/issues/{issue.id}")
+            if len(unassigned_issues) > 10:
+                log.info(f"  ... and {len(unassigned_issues) - 10} more")
+        
+        log.info("="*60)
 
 
 def round_robin_assign(project, statuses, reviewer_ids, components=None, dry_run=False, limit=50, debug=False):
@@ -537,6 +819,14 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
+  # Show current distribution summary (no assignment)
+  %(prog)s --project ceph-qa --statuses "QA Needs Approval" \\
+    --components core --summary
+
+  # Show current distribution as Slack message (no assignment)
+  %(prog)s --project ceph-qa --statuses "QA Needs Approval" \\
+    --components core --slack-message
+
   # Use known reviewers for a component
   %(prog)s --project ceph-qa --statuses "QA Needs Approval" \\
     --components core --dry-run
@@ -585,6 +875,12 @@ How to find user IDs:
                        help='Comma-separated list of Redmine user IDs (numeric). '
                             'Find user IDs at https://tracker.ceph.com/users/XXXXX (e.g., "13065,12345"). '
                             'Can be combined with --components.')
+    parser.add_argument('--summary', action='store_true',
+                       help='Show current distribution summary without assigning issues. '
+                            'Use this flag alone to see how issues are currently distributed.')
+    parser.add_argument('--slack-message', action='store_true',
+                       help='Show current distribution in Slack-formatted message (uses Slack IDs from known reviewers). '
+                            'Like --summary, this queries current state without making assignments.')
     parser.add_argument('--dry-run', action='store_true',
                        help='Show what would be assigned without making changes')
     parser.add_argument('--limit', type=int, default=50,
@@ -640,15 +936,33 @@ How to find user IDs:
     seen = set()
     reviewer_ids = [x for x in reviewer_ids if not (x in seen or seen.add(x))]
     
-    round_robin_assign(
-        project=args.project,
-        statuses=statuses,
-        reviewer_ids=reviewer_ids,
-        components=components,
-        dry_run=args.dry_run,
-        limit=args.limit,
-        debug=args.debug
-    )
+    # Handle summary/slack-message mode vs assignment mode
+    if args.summary or args.slack_message:
+        # Summary mode: just show distribution, don't assign
+        if args.dry_run:
+            log.warning("--dry-run flag is ignored when using --summary or --slack-message")
+        if args.limit != 50:
+            log.warning("--limit flag is ignored when using --summary or --slack-message")
+        
+        show_distribution_summary(
+            project=args.project,
+            statuses=statuses,
+            reviewer_ids=reviewer_ids,
+            components=components,
+            debug=args.debug,
+            slack_format=args.slack_message
+        )
+    else:
+        # Assignment mode: perform round-robin assignment
+        round_robin_assign(
+            project=args.project,
+            statuses=statuses,
+            reviewer_ids=reviewer_ids,
+            components=components,
+            dry_run=args.dry_run,
+            limit=args.limit,
+            debug=args.debug
+        )
 
 
 if __name__ == "__main__":
