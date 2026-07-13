@@ -20,8 +20,12 @@ with filtering by project, status, and tags.
 import argparse
 import logging
 import os
+import re
 import sys
 from os.path import expanduser
+from urllib.request import urlopen, Request
+from urllib.error import URLError, HTTPError
+import json
 
 import redminelib  # https://pypi.org/project/python-redmine/
 
@@ -34,8 +38,235 @@ except FileNotFoundError:
     pass
 REDMINE_API_KEY = os.getenv("REDMINE_API_KEY", REDMINE_API_KEY)
 
+# GitHub API token (optional, but recommended to avoid rate limits)
+GITHUB_TOKEN = None
+try:
+    with open(expanduser("~/.github_token")) as f:
+        GITHUB_TOKEN = f.read().strip()
+except FileNotFoundError:
+    pass
+GITHUB_TOKEN = os.getenv("GITHUB_TOKEN", GITHUB_TOKEN)
+
 # Custom field ID for Tags (freeform)
 REDMINE_CUSTOM_FIELD_ID_TAGS = 31
+
+# Hardcoded reviewer database
+# Maps tracker username -> {tracker_id, github_username, components}
+KNOWN_REVIEWERS = {
+    "lflores": {
+        "tracker_id": 13065,
+        "github_username": "ljflores",
+        "components": ["core"]
+    },
+    "nmordech": {
+        "tracker_id": 13516,
+        "github_username": "NitzanMordhai",
+        "components": ["core"]
+    },
+    "ksirivad": {
+        "tracker_id": 10217,
+        "github_username": "kamoltat",
+        "components": ["core"]
+    },
+    "rfriedma": {
+        "tracker_id": 10204,
+        "github_username": "ronen-fr",
+        "components": ["core"]
+    },
+    "amathuri": {
+        "tracker_id": 12136,
+        "github_username": "amathuria",
+        "components": ["core"]
+    },
+    "sseshasa": {
+        "tracker_id": 10181,
+        "github_username": "sseshasa",
+        "components": ["core"]
+    },
+    "shraddhaag": {
+        "tracker_id": 11050,
+        "github_username": "shraddhaag",
+        "components": ["core"]
+    },
+    "naveen.naidu@ibm.com": {
+        "tracker_id": 15031,
+        "github_username": "Naveenaidu",
+        "components": ["core"]
+    },
+    "ljsanders": {
+        "tracker_id": 14634,
+        "github_username": "lee-j-sanders",
+        "components": ["core"]
+    },
+    "JonBailey1993": {
+        "tracker_id": 14872,
+        "github_username": "JonBailey1993",
+        "components": ["core"]
+    },
+    "ConnorFawcett": {
+        "tracker_id": 14644,
+        "github_username": "connorfawcett",
+        "components": ["core"]
+    },
+    "Jayaprakash.ceph": {
+        "tracker_id": 15114,
+        "github_username": "Jayaprakash-ibm",
+        "components": ["core"]
+    },
+    # Add more reviewers here as needed
+    # "username": {
+    #     "tracker_id": 12345,
+    #     "github_username": "githubuser",
+    #     "components": ["core", "rgw", "rbd"]
+    # },
+}
+
+def get_reviewer_ids_by_components(components=None):
+    """
+    Get list of reviewer tracker IDs, optionally filtered by components.
+    
+    Args:
+        components: Optional list of component names to filter reviewers (e.g., ["core", "rgw"])
+    
+    Returns:
+        List of tracker IDs for reviewers matching any of the components
+    """
+    if components:
+        reviewer_ids = []
+        for component in components:
+            ids = [
+                info["tracker_id"]
+                for info in KNOWN_REVIEWERS.values()
+                if component in info["components"]
+            ]
+            reviewer_ids.extend(ids)
+        # Remove duplicates while preserving order
+        seen = set()
+        return [x for x in reviewer_ids if not (x in seen or seen.add(x))]
+    else:
+        return [info["tracker_id"] for info in KNOWN_REVIEWERS.values()]
+
+def get_reviewer_info(username):
+    """
+    Get reviewer information by tracker username.
+    
+    Args:
+        username: Tracker username (e.g., "lflores")
+    
+    Returns:
+        Dict with tracker_id, github_username, and components, or None if not found
+    """
+    return KNOWN_REVIEWERS.get(username)
+
+def get_username_by_id(user_id):
+    """
+    Get tracker username by user ID.
+    
+    Args:
+        user_id: Tracker user ID (numeric)
+    
+    Returns:
+        Username string, or None if not found in known reviewers
+    """
+    for username, info in KNOWN_REVIEWERS.items():
+        if info["tracker_id"] == user_id:
+            return username
+    return None
+
+def get_reviewer_by_github_username(github_username):
+    """
+    Get reviewer tracker ID by GitHub username.
+    
+    Args:
+        github_username: GitHub username (e.g., "ljflores")
+    
+    Returns:
+        Tracker user ID, or None if not found in known reviewers
+    """
+    github_username_lower = github_username.lower()
+    for username, info in KNOWN_REVIEWERS.items():
+        if info["github_username"].lower() == github_username_lower:
+            return info["tracker_id"]
+    return None
+
+def get_pr_author_from_github(pr_number):
+    """
+    Get the author of a GitHub PR using the GitHub API.
+    
+    Args:
+        pr_number: PR number (e.g., 69823)
+    
+    Returns:
+        GitHub username of PR author, or None if unable to fetch
+    """
+    url = f"https://api.github.com/repos/ceph/ceph/pulls/{pr_number}"
+    
+    try:
+        headers = {'Accept': 'application/vnd.github.v3+json'}
+        if GITHUB_TOKEN:
+            headers['Authorization'] = f'token {GITHUB_TOKEN}'
+        
+        req = Request(url, headers=headers)
+        with urlopen(req, timeout=5) as response:
+            data = json.loads(response.read().decode())
+            if 'user' in data and 'login' in data['user']:
+                return data['user']['login']
+    except (URLError, HTTPError, json.JSONDecodeError, KeyError) as e:
+        # Silently fail - we'll just not prioritize this PR
+        pass
+    
+    return None
+
+def check_issue_for_reviewer_prs(issue, reviewer_ids, debug=False):
+    """
+    Check if any of the PRs in the issue were authored by one of the reviewers.
+    
+    Args:
+        issue: Redmine issue object
+        reviewer_ids: List of reviewer user IDs to check
+        debug: Enable debug logging
+    
+    Returns:
+        User ID of matching reviewer, or None if no match
+    """
+    if not hasattr(issue, 'description') or not issue.description:
+        return None
+    
+    # Extract PR numbers from description
+    pr_pattern = r'https://github\.com/ceph/ceph/pull/(\d+)'
+    pr_numbers = re.findall(pr_pattern, issue.description)
+    
+    if not pr_numbers:
+        return None
+    
+    if debug:
+        log.debug(f"Found {len(pr_numbers)} PR(s) in issue #{issue.id}: {pr_numbers}")
+    
+    # Build a map of GitHub username -> reviewer user ID
+    github_to_reviewer = {}
+    for user_id in reviewer_ids:
+        username = get_username_by_id(user_id)
+        if username:
+            info = get_reviewer_info(username)
+            if info and info["github_username"]:
+                github_to_reviewer[info["github_username"].lower()] = user_id
+    
+    # Check each PR to see if author matches a reviewer
+    for pr_number in pr_numbers:
+        pr_author = get_pr_author_from_github(pr_number)
+        if pr_author:
+            pr_author_lower = pr_author.lower()
+            if debug:
+                log.debug(f"  PR #{pr_number} author: {pr_author}")
+            
+            if pr_author_lower in github_to_reviewer:
+                matched_user_id = github_to_reviewer[pr_author_lower]
+                matched_username = get_username_by_id(matched_user_id)
+                if debug:
+                    log.debug(f"  Matched reviewer: {matched_username} ({matched_user_id})")
+                return matched_user_id
+    
+    return None
 
 log = logging.getLogger(__name__)
 log_stream = logging.StreamHandler()
@@ -43,7 +274,7 @@ log.addHandler(log_stream)
 log.setLevel(logging.INFO)
 
 
-def round_robin_assign(project, statuses, reviewer_ids, tags=None, dry_run=False, limit=50, debug=False):
+def round_robin_assign(project, statuses, reviewer_ids, components=None, dry_run=False, limit=50, debug=False):
     """
     Assign unassigned issues to reviewers in round-robin fashion.
     
@@ -51,7 +282,7 @@ def round_robin_assign(project, statuses, reviewer_ids, tags=None, dry_run=False
         project: Redmine project identifier (e.g., "ceph-qa")
         statuses: List of status names to filter (e.g., ["QA Needs Approval"])
         reviewer_ids: List of Redmine user IDs for assignment (numeric)
-        tags: Optional list of tags to filter issues
+        components: Optional list of components to filter issues
         dry_run: If True, show what would be assigned without making changes
         limit: Maximum number of issues to process
         debug: Enable debug logging
@@ -107,10 +338,10 @@ def round_robin_assign(project, statuses, reviewer_ids, tags=None, dry_run=False
         "limit": 1000,  # Get more to count assignments accurately
     }
     
-    # Add tag filter if specified
-    if tags:
-        all_issues_filter[f"cf_{REDMINE_CUSTOM_FIELD_ID_TAGS}"] = f"~{tags[0]}"
-        log.info(f"Filtering by tag: {tags[0]}")
+    # Add component filter if specified
+    if components:
+        all_issues_filter[f"cf_{REDMINE_CUSTOM_FIELD_ID_TAGS}"] = f"~{components[0]}"
+        log.info(f"Filtering by component(s): {', '.join(components)}")
     
     all_issues = list(R.issue.filter(**all_issues_filter))
     
@@ -119,6 +350,23 @@ def round_robin_assign(project, statuses, reviewer_ids, tags=None, dry_run=False
     unassigned_issues = []
     
     for issue in all_issues:
+        # Check if issue matches any of the requested components
+        if components:
+            issue_components_str = None
+            if hasattr(issue, 'custom_fields'):
+                for cf in issue.custom_fields:
+                    if cf.id == REDMINE_CUSTOM_FIELD_ID_TAGS:
+                        issue_components_str = cf.value
+                        break
+            
+            if issue_components_str:
+                issue_components = [c.strip() for c in issue_components_str.split(',') if c.strip()]
+                # Check if first component matches any requested component
+                if issue_components and issue_components[0] not in components:
+                    continue  # Skip this issue
+            else:
+                continue  # Skip issues without components
+        
         if hasattr(issue, 'assigned_to') and issue.assigned_to:
             assignee_id = issue.assigned_to.id
             if assignee_id in reviewer_ids:
@@ -149,14 +397,43 @@ def round_robin_assign(project, statuses, reviewer_ids, tags=None, dry_run=False
     # Assign issues using load-balanced round-robin
     # Always assign to the reviewer with the fewest current assignments
     new_assignments = {}  # Track new assignments: {user_id: [issue_ids]}
+    pr_prioritized_assignments = {}  # Track PR-prioritized assignments: {user_id: [issue_ids]}
+    last_assigned_index = -1  # Track last assigned reviewer for round-robin within same count
     
     for issue in unassigned_issues:
+        # Check if any reviewer authored a PR in this issue
+        pr_author_id = check_issue_for_reviewer_prs(issue, reviewer_ids, debug=debug)
+        
         # Find reviewer(s) with minimum assignments
         min_count = min(current_assignments.values())
         candidates = [uid for uid in reviewer_ids if current_assignments[uid] == min_count]
         
-        # If multiple reviewers have same count, pick the first one in the list
-        user_id = candidates[0]
+        # Track if this assignment was PR-prioritized
+        was_pr_prioritized = False
+        
+        # If a PR author is among the candidates with minimum count, prioritize them
+        if pr_author_id and pr_author_id in candidates:
+            user_id = pr_author_id
+            last_assigned_index = reviewer_ids.index(user_id)
+            username = get_username_by_id(user_id)
+            log.info(f"Prioritizing {username} ({user_id}) for issue #{issue.id} (authored PR in this batch)")
+            was_pr_prioritized = True
+        # If multiple reviewers have same count, rotate through them
+        elif len(candidates) > 1:
+            # Find where we left off in the reviewer_ids list
+            candidate_indices = [reviewer_ids.index(uid) for uid in candidates]
+            # Get the next index after last_assigned_index
+            next_indices = [idx for idx in candidate_indices if idx > last_assigned_index]
+            if next_indices:
+                chosen_index = min(next_indices)
+            else:
+                # Wrap around to the beginning
+                chosen_index = min(candidate_indices)
+            user_id = reviewer_ids[chosen_index]
+            last_assigned_index = chosen_index
+        else:
+            user_id = candidates[0]
+            last_assigned_index = reviewer_ids.index(user_id)
         
         # Update counts
         current_assignments[user_id] += 1
@@ -168,13 +445,23 @@ def round_robin_assign(project, statuses, reviewer_ids, tags=None, dry_run=False
                 new_assignments[user_id] = []
             new_assignments[user_id].append(issue.id)
             
+            # Track PR-prioritized assignments separately
+            if was_pr_prioritized:
+                if user_id not in pr_prioritized_assignments:
+                    pr_prioritized_assignments[user_id] = []
+                pr_prioritized_assignments[user_id].append(issue.id)
+            
+            # Get username for display
+            username = get_username_by_id(user_id)
+            display_name = f"{username} ({user_id})" if username else f"User ID {user_id}"
+            
             if dry_run:
-                log.info(f"[DRY RUN] Would assign issue #{issue.id} to user ID {user_id}")
+                log.info(f"[DRY RUN] Would assign issue #{issue.id} to {display_name}")
             else:
-                log.info(f"Assigning issue #{issue.id} to user ID {user_id}")
+                log.info(f"Assigning issue #{issue.id} to {display_name}")
                 try:
                     R.issue.update(issue.id, assigned_to_id=user_id)
-                    log.info(f"Successfully assigned issue #{issue.id} to user ID {user_id}")
+                    log.info(f"Successfully assigned issue #{issue.id} to {display_name}")
                 except Exception as e:
                     log.error(f"Failed to assign issue #{issue.id}: {e}")
                     if debug:
@@ -209,17 +496,38 @@ def round_robin_assign(project, statuses, reviewer_ids, tags=None, dry_run=False
         for user_id in reviewer_ids:
             new_count = len(new_assignments.get(user_id, []))
             total_count = current_assignments[user_id]
+            username = get_username_by_id(user_id)
+            display_name = f"{username} ({user_id})" if username else f"User ID {user_id}"
+            
             if dry_run:
-                log.info(f"  User ID {user_id}: {total_count} total ({new_count} new)")
+                log.info(f"  {display_name}: {total_count} total ({new_count} new)")
             else:
-                log.info(f"  User ID {user_id}: {total_count} total ({new_count} newly assigned)")
+                log.info(f"  {display_name}: {total_count} total ({new_count} newly assigned)")
         
         log.info("")
         log.info("New assignments:")
         for user_id, issue_ids in sorted(new_assignments.items()):
-            log.info(f"  User ID {user_id} - {len(issue_ids)} issue(s):")
+            username = get_username_by_id(user_id)
+            display_name = f"{username} ({user_id})" if username else f"User ID {user_id}"
+            pr_count = len(pr_prioritized_assignments.get(user_id, []))
+            
+            if pr_count > 0:
+                log.info(f"  {display_name} - {len(issue_ids)} issue(s) ({pr_count} prioritized for PR authorship):")
+            else:
+                log.info(f"  {display_name} - {len(issue_ids)} issue(s):")
+            
             for issue_id in issue_ids:
-                log.info(f"    - {REDMINE_ENDPOINT}/issues/{issue_id}")
+                # Mark PR-prioritized issues with an asterisk
+                if user_id in pr_prioritized_assignments and issue_id in pr_prioritized_assignments[user_id]:
+                    log.info(f"    - {REDMINE_ENDPOINT}/issues/{issue_id} *")
+                else:
+                    log.info(f"    - {REDMINE_ENDPOINT}/issues/{issue_id}")
+        
+        # Add legend if any PR prioritizations occurred
+        if pr_prioritized_assignments:
+            log.info("")
+            log.info("* = Prioritized due to PR authorship")
+        
         log.info("="*60)
 
 
@@ -229,17 +537,34 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  # Dry run to see what would be assigned (use numeric user IDs)
+  # Use known reviewers for a component
   %(prog)s --project ceph-qa --statuses "QA Needs Approval" \\
-    --reviewers 13065,12345 --tags core --dry-run
+    --components core --dry-run
 
-  # Actually assign issues
+  # Use known reviewers for multiple components
   %(prog)s --project ceph-qa --statuses "QA Needs Approval" \\
-    --reviewers 13065,12345 --tags core
+    --components "core,rgw" --dry-run
 
-  # Assign without tag filtering
+  # Use specific user IDs
   %(prog)s --project ceph-qa --statuses "QA Needs Approval" \\
-    --reviewers 13065,12345
+    --reviewers 13065,12345 --components core --dry-run
+
+  # Combine known reviewers with additional IDs
+  %(prog)s --project ceph-qa --statuses "QA Needs Approval" \\
+    --components core --reviewers 99999
+
+  # Assign without component filtering (all unassigned issues)
+  %(prog)s --project ceph-qa --statuses "QA Needs Approval" \\
+    --reviewers 13065,13516
+
+Known reviewers:
+  lflores (13065) - ljflores on GitHub - components: core
+  nmordech (13516) - NitzanMordhai on GitHub - components: core
+
+Component matching:
+  Issues with multiple components (e.g., "core,rgw") are matched by their
+  FIRST component. If --components="core,rgw", an issue tagged "core,rgw"
+  will be assigned to a core reviewer.
 
 How to find user IDs:
   1. Go to https://tracker.ceph.com
@@ -253,11 +578,13 @@ How to find user IDs:
                        help='Redmine project identifier (e.g., "ceph-qa")')
     parser.add_argument('--statuses', required=True,
                        help='Comma-separated list of status names (e.g., "QA Needs Approval,QA Testing")')
-    parser.add_argument('--reviewers', required=True,
+    parser.add_argument('--components',
+                       help='Comma-separated list of components to filter and assign (e.g., "core,rgw"). '
+                            'Uses known reviewers for these components. Can be combined with --reviewers.')
+    parser.add_argument('--reviewers',
                        help='Comma-separated list of Redmine user IDs (numeric). '
-                            'Find user IDs at https://tracker.ceph.com/users/XXXXX (e.g., "13065,12345")')
-    parser.add_argument('--tags',
-                       help='Comma-separated list of tags to filter (e.g., "core")')
+                            'Find user IDs at https://tracker.ceph.com/users/XXXXX (e.g., "13065,12345"). '
+                            'Can be combined with --components.')
     parser.add_argument('--dry-run', action='store_true',
                        help='Show what would be assigned without making changes')
     parser.add_argument('--limit', type=int, default=50,
@@ -269,31 +596,55 @@ How to find user IDs:
     
     # Parse comma-separated lists
     statuses = [s.strip() for s in args.statuses.split(',') if s.strip()]
-    reviewer_ids_str = [r.strip() for r in args.reviewers.split(',') if r.strip()]
-    tags = [t.strip() for t in args.tags.split(',') if t.strip()] if args.tags else None
+    components = [c.strip() for c in args.components.split(',') if c.strip()] if args.components else None
     
     if not statuses:
         log.error("No statuses specified.")
         sys.exit(1)
     
-    if not reviewer_ids_str:
-        log.error("No reviewer IDs specified.")
+    # Build reviewer ID list
+    reviewer_ids = []
+    
+    # Add reviewers from components if specified
+    if components:
+        component_reviewers = get_reviewer_ids_by_components(components)
+        if component_reviewers:
+            reviewer_ids.extend(component_reviewers)
+            log.info(f"Using {len(component_reviewers)} known reviewer(s) for component(s): {', '.join(components)}")
+        else:
+            log.warning(f"No known reviewers found for component(s): {', '.join(components)}")
+    
+    # Add additional reviewers from --reviewers if specified
+    if args.reviewers:
+        reviewer_ids_str = [r.strip() for r in args.reviewers.split(',') if r.strip()]
+        try:
+            additional_ids = [int(r) for r in reviewer_ids_str]
+            reviewer_ids.extend(additional_ids)
+            log.info(f"Added {len(additional_ids)} additional reviewer(s) from --reviewers")
+        except ValueError as e:
+            log.error(f"Invalid reviewer ID format. All reviewer IDs must be numeric.")
+            log.error(f"Example: --reviewers '13065,12345'")
+            log.error(f"Find user IDs at https://tracker.ceph.com/users/XXXXX")
+            sys.exit(1)
+    
+    # Check that we have at least one reviewer
+    if not reviewer_ids:
+        log.error("No reviewers specified.")
+        log.error("Use --components to select known reviewers, or --reviewers to specify user IDs.")
+        log.error("Example: --components core")
+        log.error("Example: --components 'core,rgw'")
+        log.error("Example: --reviewers '13065,12345'")
         sys.exit(1)
     
-    # Convert reviewer IDs to integers
-    try:
-        reviewer_ids = [int(r) for r in reviewer_ids_str]
-    except ValueError as e:
-        log.error(f"Invalid reviewer ID format. All reviewer IDs must be numeric.")
-        log.error(f"Example: --reviewers '13065,12345'")
-        log.error(f"Find user IDs at https://tracker.ceph.com/users/XXXXX")
-        sys.exit(1)
+    # Remove duplicates while preserving order
+    seen = set()
+    reviewer_ids = [x for x in reviewer_ids if not (x in seen or seen.add(x))]
     
     round_robin_assign(
         project=args.project,
         statuses=statuses,
         reviewer_ids=reviewer_ids,
-        tags=tags,
+        components=components,
         dry_run=args.dry_run,
         limit=args.limit,
         debug=args.debug
