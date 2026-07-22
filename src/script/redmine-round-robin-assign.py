@@ -26,6 +26,7 @@ from os.path import expanduser
 from urllib.request import urlopen, Request
 from urllib.error import URLError, HTTPError
 import json
+import requests
 
 import redminelib  # https://pypi.org/project/python-redmine/
 
@@ -46,9 +47,6 @@ try:
 except FileNotFoundError:
     pass
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN", GITHUB_TOKEN)
-
-# Custom field ID for Tags (freeform)
-REDMINE_CUSTOM_FIELD_ID_TAGS = 31
 
 # Hardcoded reviewer database
 # Maps tracker username -> {tracker_id, github_username, components}
@@ -362,6 +360,83 @@ def check_issue_for_reviewer_prs(issue, reviewer_ids, debug=False):
     
     return None
 
+class _IssueWrapper:
+    """
+    Thin wrapper around a raw Redmine issue JSON dict so the rest of the
+    script can use attribute-style access (issue.id, issue.assigned_to.id,
+    issue.status.name, issue.description, issue.subject).
+    """
+    class _Attr:
+        def __init__(self, d):
+            self.__dict__.update(d)
+
+    def __init__(self, d):
+        self.id = d["id"]
+        self.subject = d.get("subject", "")
+        self.description = d.get("description", "")
+        assigned = d.get("assigned_to")
+        self.assigned_to = self._Attr(assigned) if assigned else None
+        status = d.get("status", {})
+        self.status = self._Attr(status)
+
+
+def fetch_issues(project_id, status_ids, components=None, limit=1000):
+    """
+    Fetch issues from Redmine using the issue_tags plugin filter, which
+    requires the f[]/op[]/v[] envelope that redminelib cannot express for
+    plugin-provided fields.
+
+    Args:
+        project_id:  Numeric Redmine project ID.
+        status_ids:  List of status ID strings.
+        components:  Optional list of tag names (e.g. ["core"]).
+        limit:       Maximum issues to return.
+
+    Returns:
+        List of _IssueWrapper objects.
+    """
+    url = f"{REDMINE_ENDPOINT}/projects/{project_id}/issues.json"
+
+    # Build the filter parameter list in the order Redmine expects.
+    # Repeated keys require a list-of-tuples rather than a dict.
+    params = [
+        ("key", REDMINE_API_KEY),
+        ("f[]", "status_id"),
+        ("op[status_id]", "="),
+    ]
+    for sid in status_ids:
+        params.append(("v[status_id][]", sid))
+
+    if components:
+        params.append(("f[]", "issue_tags"))
+        params.append(("op[issue_tags]", "="))
+        for tag in components:
+            params.append(("v[issue_tags][]", tag))
+
+    params.append(("f[]", ""))  # close filter list (matches UI behaviour)
+
+    all_issues = []
+    offset = 0
+    chunk = 100
+
+    while True:
+        paged = params + [("limit", chunk), ("offset", offset)]
+        resp = requests.get(url, params=paged, timeout=30)
+        if resp.status_code != 200:
+            raise RuntimeError(
+                f"Redmine API returned HTTP {resp.status_code} while fetching issues: {resp.text[:200]}"
+            )
+        data = resp.json()
+        batch = data.get("issues", [])
+        all_issues.extend(batch)
+        total = data.get("total_count", len(all_issues))
+        offset += len(batch)
+        if offset >= min(limit, total) or not batch:
+            break
+
+    return [_IssueWrapper(d) for d in all_issues[:limit]]
+
+
 log = logging.getLogger(__name__)
 log_stream = logging.StreamHandler()
 log.addHandler(log_stream)
@@ -425,18 +500,9 @@ def show_distribution_summary(project, statuses, reviewer_ids, components=None, 
     
     # Query ALL issues in target statuses
     log.info("Querying issues in target statuses...")
-    all_issues_filter = {
-        "project_id": project_id,
-        "status_id": ",".join(status_ids),
-        "limit": 1000,
-    }
-    
-    # Add component filter if specified
     if components:
-        all_issues_filter[f"cf_{REDMINE_CUSTOM_FIELD_ID_TAGS}"] = f"~{components[0]}"
         log.info(f"Filtering by component(s): {', '.join(components)}")
-    
-    all_issues = list(R.issue.filter(**all_issues_filter))
+    all_issues = fetch_issues(project_id, status_ids, components=components, limit=1000)
     
     # Count current assignments for each reviewer
     current_assignments = {user_id: [] for user_id in reviewer_ids}
@@ -444,23 +510,6 @@ def show_distribution_summary(project, statuses, reviewer_ids, components=None, 
     other_assignees = {}  # Track issues assigned to non-reviewers
     
     for issue in all_issues:
-        # Check if issue matches any of the requested components
-        if components:
-            issue_components_str = None
-            if hasattr(issue, 'custom_fields'):
-                for cf in issue.custom_fields:
-                    if cf.id == REDMINE_CUSTOM_FIELD_ID_TAGS:
-                        issue_components_str = cf.value
-                        break
-            
-            if issue_components_str:
-                issue_components = [c.strip() for c in issue_components_str.split(',') if c.strip()]
-                # Check if first component matches any requested component
-                if issue_components and issue_components[0] not in components:
-                    continue  # Skip this issue
-            else:
-                continue  # Skip issues without components
-        
         if hasattr(issue, 'assigned_to') and issue.assigned_to:
             assignee_id = issue.assigned_to.id
             if assignee_id in reviewer_ids:
@@ -614,41 +663,15 @@ def round_robin_assign(project, statuses, reviewer_ids, components=None, dry_run
     
     # First, query ALL issues in target statuses to count existing assignments
     log.info("Querying existing assignments in target statuses...")
-    all_issues_filter = {
-        "project_id": project_id,
-        "status_id": ",".join(status_ids),
-        "limit": 1000,  # Get more to count assignments accurately
-    }
-    
-    # Add component filter if specified
     if components:
-        all_issues_filter[f"cf_{REDMINE_CUSTOM_FIELD_ID_TAGS}"] = f"~{components[0]}"
         log.info(f"Filtering by component(s): {', '.join(components)}")
-    
-    all_issues = list(R.issue.filter(**all_issues_filter))
+    all_issues = fetch_issues(project_id, status_ids, components=components, limit=1000)
     
     # Count current assignments for each reviewer
     current_assignments = {user_id: 0 for user_id in reviewer_ids}
     unassigned_issues = []
     
     for issue in all_issues:
-        # Check if issue matches any of the requested components
-        if components:
-            issue_components_str = None
-            if hasattr(issue, 'custom_fields'):
-                for cf in issue.custom_fields:
-                    if cf.id == REDMINE_CUSTOM_FIELD_ID_TAGS:
-                        issue_components_str = cf.value
-                        break
-            
-            if issue_components_str:
-                issue_components = [c.strip() for c in issue_components_str.split(',') if c.strip()]
-                # Check if first component matches any requested component
-                if issue_components and issue_components[0] not in components:
-                    continue  # Skip this issue
-            else:
-                continue  # Skip issues without components
-        
         if hasattr(issue, 'assigned_to') and issue.assigned_to:
             assignee_id = issue.assigned_to.id
             if assignee_id in reviewer_ids:
