@@ -684,7 +684,10 @@ def round_robin_assign(project, statuses, reviewer_ids, components=None, dry_run
     
     log.info(f"Current assignment counts:")
     for user_id in reviewer_ids:
-        log.info(f"  User ID {user_id}: {current_assignments[user_id]} issue(s)")
+        # Get username for display
+        username = get_username_by_id(user_id)
+        display_name = f"{username} ({user_id})" if username else f"User ID {user_id}"
+        log.info(f"{display_name}: {current_assignments[user_id]} issue(s)")
     
     log.info(f"Found {len(unassigned_issues)} unassigned issue(s) to assign.")
     
