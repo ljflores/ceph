@@ -20,6 +20,7 @@ with filtering by project, status, and tags.
 import argparse
 import logging
 import os
+import random
 import re
 import sys
 from os.path import expanduser
@@ -706,7 +707,17 @@ def round_robin_assign(project, statuses, reviewer_ids, components=None, dry_run
     # Always assign to the reviewer with the fewest current assignments
     new_assignments = {}  # Track new assignments: {user_id: [issue_ids]}
     pr_prioritized_assignments = {}  # Track PR-prioritized assignments: {user_id: [issue_ids]}
-    last_assigned_index = -1  # Track last assigned reviewer for round-robin within same count
+
+    # When all reviewers are tied, pick a random starting index so the same
+    # person doesn't always get the first issue every run.
+    all_tied = len(set(current_assignments.values())) == 1
+    if all_tied and len(reviewer_ids) > 1:
+        start_index = random.randrange(len(reviewer_ids))
+        last_assigned_index = start_index - 1  # rotation picks the next index after this
+        log.debug(f"All reviewers tied; randomized start index: {start_index} "
+                  f"({get_username_by_id(reviewer_ids[start_index]) or reviewer_ids[start_index]})")
+    else:
+        last_assigned_index = -1  # default: start from front
     
     for issue in unassigned_issues:
         # Check if any reviewer authored a PR in this issue
