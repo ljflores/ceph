@@ -885,6 +885,9 @@ How to find user IDs:
                        help='Show what would be assigned without making changes')
     parser.add_argument('--limit', type=int, default=50,
                        help='Maximum number of issues to process (default: 50)')
+    parser.add_argument('--exclude',
+                       help='Comma-separated list of tracker usernames to exclude from assignment '
+                            '(e.g., "lflores,nmordech")')
     parser.add_argument('--debug', action='store_true',
                        help='Enable debug logging')
     
@@ -935,6 +938,21 @@ How to find user IDs:
     # Remove duplicates while preserving order
     seen = set()
     reviewer_ids = [x for x in reviewer_ids if not (x in seen or seen.add(x))]
+
+    # Exclude specified usernames
+    if args.exclude:
+        excluded_usernames = [u.strip() for u in args.exclude.split(',') if u.strip()]
+        for username in excluded_usernames:
+            info = get_reviewer_info(username)
+            if info is None:
+                log.warning(f"--exclude: unknown username '{username}', skipping.")
+                continue
+            excluded_id = info["tracker_id"]
+            if excluded_id in reviewer_ids:
+                reviewer_ids.remove(excluded_id)
+                log.info(f"Excluded reviewer '{username}' ({excluded_id}) from assignment.")
+            else:
+                log.warning(f"--exclude: '{username}' is not in the active reviewer list, skipping.")
     
     # Handle summary/slack-message mode vs assignment mode
     if args.summary or args.slack_message:
