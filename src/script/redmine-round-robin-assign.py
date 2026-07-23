@@ -868,10 +868,6 @@ Examples:
   %(prog)s --project ceph-qa --statuses "QA Needs Approval" \\
     --components core --dry-run
 
-  # Use known reviewers for multiple components
-  %(prog)s --project ceph-qa --statuses "QA Needs Approval" \\
-    --components "core,rgw" --dry-run
-
   # Use specific user IDs
   %(prog)s --project ceph-qa --statuses "QA Needs Approval" \\
     --reviewers 13065,12345 --components core --dry-run
@@ -879,14 +875,6 @@ Examples:
   # Combine known reviewers with additional IDs
   %(prog)s --project ceph-qa --statuses "QA Needs Approval" \\
     --components core --reviewers 99999
-
-  # Assign without component filtering (all unassigned issues)
-  %(prog)s --project ceph-qa --statuses "QA Needs Approval" \\
-    --reviewers 13065,13516
-
-Known reviewers:
-  lflores (13065) - ljflores on GitHub - components: core
-  nmordech (13516) - NitzanMordhai on GitHub - components: core
 
 Component matching:
   Issues with multiple components (e.g., "core,rgw") are matched by their
