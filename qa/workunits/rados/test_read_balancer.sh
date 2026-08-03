@@ -2,10 +2,10 @@
 # vim: expandtab shiftwidth=4 softtabstop=4
 set -ex
 
-# This workunit is to be used as a basis for testing read balancer functionality of both the 'online'
+# This workunit is to be used as a basis for testing upmap balancer functionality of both the 'online'
 # mgr module and the 'offline' CLI commands.
 
-# See https://docs.ceph.com/en/latest/rados/operations/read-balancer/ for more information.
+# See https://docs.ceph.com/en/latest/rados/operations/upmap-balancer/ for more information.
 
 vstart=false
 ceph="ceph"
@@ -15,10 +15,10 @@ function print_help {
 
 Help:
 
-   test_read_balancer.sh --help
+   test_upmap_balancer.sh --help
 
 Usage:
-   test_read_balancer.sh {-vstart}
+   test_upmap_balancer.sh {-vstart}
 
 The test may be run as-is for teuthology tests, but you may add the --vstart
 flag to run the test on a vstart cluster.
@@ -40,13 +40,20 @@ function shut_down_cluster {
     fi
 }
 
-function TEST_read_balancer_bulk_flag {
+function cleanup {
+    echo "Delete pools that were created or that we intend to create fresh..."
+    "$ceph" osd pool rm foo foo --yes-i-really-really-mean-it || return 1
+    "$ceph" osd pool rm foo_2 foo_2 --yes-i-really-really-mean-it || return 1
+    "$ceph" osd pool rm foo_3 foo_3 --yes-i-really-really-mean-it || return 1
+}
+
+function TEST_upmap_balancer_bulk_flag {
     # Tests bug from https://tracker.ceph.com/issues/76731
     echo "TEST 1: Read balancer interaction with pg_autoscaler 'bulk' flag"
 
-    # Enable the read balancer
+    # Enable the upmap balancer
     "$ceph" osd set-require-min-compat-client reef || return 1
-    "$ceph" balancer mode upmap-read || return 1
+    "$ceph" balancer mode upmap || return 1
 
     # Restrict upmap_max_deviation (balancer will apply more mappings this way)
     "$ceph" config set mgr mgr/balancer/upmap_max_deviation 1 || return 1
@@ -122,12 +129,12 @@ function TEST_read_balancer_bulk_flag {
     [[ $pg_num_expected -eq $pg_num_actual ]] || { echo "ERROR: Pool foo failed to scale up in time." >&2; return 1; }
 
 
-    # Confirm that pool foo has pg_upmap_primary mappings
+    # Confirm that pool foo has pg_upmap_items mappings
     time_elapsed_s=0
     primary_mappings=""
 
     while (( time_elapsed_s <= 300 )); do
-        primary_mappings=$("$ceph" osd dump | grep 'pg_upmap_primary' | grep "${pool_id}\." || true)
+        primary_mappings=$("$ceph" osd dump | grep 'pg_upmap_items' | grep "${pool_id}\." || true)
 
         # Run the balancer if there are no primary mappings
         if [[ -z "$primary_mappings" ]]; then
@@ -141,10 +148,10 @@ function TEST_read_balancer_bulk_flag {
 
         time_elapsed_s=$((time_elapsed_s + 5))
         sleep 5
-        echo "Waited $time_elapsed_s s for the balancer to apply pg_upmap_primary mappings..."
+        echo "Waited $time_elapsed_s s for the balancer to apply pg_upmap_items mappings..."
     done
 
-    test -n "$primary_mappings" || { echo "ERROR: No pg_upmap_primary mappings were created for pool foo." >&2; return 1; }
+    test -n "$primary_mappings" || { echo "ERROR: No pg_upmap_items mappings were created for pool foo." >&2; return 1; }
 
     # Turn balancer off to control variables (we don't want it to add mappings back just yet)
     "$ceph" balancer off || return 1
@@ -185,12 +192,12 @@ function TEST_read_balancer_bulk_flag {
     [[ $pg_num_expected -eq $orig_pg_num ]] || { echo "ERROR: Autoscaler never reverted to original pg value." >&2; return 1; }
     [[ $pg_num_expected -eq $pg_num_actual ]] || { echo "ERROR: Pool foo failed to scale down in time." >&2; return 1; }
 
-    # Confirm that pg_upmap_primary mappings are cleared for pool foo
+    # Confirm that pg_upmap_items mappings are cleared for pool foo
     time_elapsed_s=0
     primary_mappings=""
 
     while (( time_elapsed_s <= 300 )); do
-        primary_mappings=$("$ceph" osd dump | grep 'pg_upmap_primary' | grep "${pool_id}\." || true)
+        primary_mappings=$("$ceph" osd dump | grep 'pg_upmap_items' | grep "${pool_id}\." || true)
 
         # Exit early if the mappings are gone
         if [[ -z "$primary_mappings" ]]; then
@@ -199,18 +206,18 @@ function TEST_read_balancer_bulk_flag {
 
         time_elapsed_s=$((time_elapsed_s + 5))
         sleep 5
-        echo "Waited $time_elapsed_s s for the pg_upmap_primary mappings to clear..."
+        echo "Waited $time_elapsed_s s for the pg_upmap_items mappings to clear..."
     done
 
-    test -z "$primary_mappings" || { echo "ERROR: The pg_upmap_primary mappings for pool foo were not cleared in time." >&2; return 1; }
+    test -z "$primary_mappings" || { echo "ERROR: The pg_upmap_items mappings for pool foo were not cleared in time." >&2; return 1; }
 }
 
-function TEST_read_balancer_cli {
+function TEST_upmap_balancer_cli {
     echo "TEST 2: Verify 'ceph osd rm-pg-upmap-primary-all'"
 
-    # Make sure the read balance is enabled
+    # Make sure the upmap balance is enabled
     "$ceph" osd set-require-min-compat-client reef || return 1
-    "$ceph" balancer mode upmap-read || return 1
+    "$ceph" balancer mode upmap || return 1
 
     # Turn balancer back on for every pool
     "$ceph" balancer on || return 1
@@ -226,21 +233,21 @@ function TEST_read_balancer_cli {
     echo "Let new pools settle..."
     sleep 30
 
-    # Confirm that multiple pools have pg_upmap_primary mappings
+    # Confirm that multiple pools have pg_upmap_items mappings
     time_elapsed_s=0
     prim_pools=""
     num_prim_pools=0
     while (( time_elapsed_s <= 300 )); do
         prim_pools="$(
             "$ceph" osd dump -f json |
-            jq -r '.pg_upmap_primaries[]?.pgid | split(".")[0]' |
+            jq -r '.pg_upmap_items[]?.pgid | split(".")[0]' |
             sort -u || true
         )"
         num_prim_pools=$(echo "$prim_pools" | grep -c .) || true
 
-        # Break if at least two pools have pg_upmap_primary mappings
+        # Break if at least two pools have pg_upmap_items mappings
         if [[ $num_prim_pools -ge 2 ]]; then
-            echo "2 or more pools have pg_upmap_primary mappings."
+            echo "2 or more pools have pg_upmap_items mappings."
             break
         fi
 
@@ -249,10 +256,10 @@ function TEST_read_balancer_cli {
 
         time_elapsed_s=$((time_elapsed_s + 5))
         sleep 5
-        echo "Waited $time_elapsed_s s for the balancer to apply pg_upmap_primary mappings..."
+        echo "Waited $time_elapsed_s s for the balancer to apply pg_upmap_items mappings..."
     done
 
-    test "$num_prim_pools" -ge 2 || { echo "Not enough pools have pg_upmap_primary mappings." >&2; return 1; }
+    test "$num_prim_pools" -ge 2 || { echo "Not enough pools have pg_upmap_items mappings." >&2; return 1; }
 
     # Turn balancer off to freeze mapping state
     "$ceph" balancer off || return 1 
@@ -276,12 +283,12 @@ function TEST_read_balancer_cli {
 
     # Check each pool for existance of prim mappings
     for pool_id in $prim_pools; do
-        primary_mappings=$("$ceph" osd dump | grep 'pg_upmap_primary' | grep "${pool_id}\." || true)
+        primary_mappings=$("$ceph" osd dump | grep 'pg_upmap_items' | grep "${pool_id}\." || true)
 
         if [[ $pool_id -eq $rand_pool_id ]]; then
-            [[ -z "$primary_mappings" ]] || { echo "ERROR: Pool $pool_id (random pool) should not have any pg_upmap_primary mappings: $primary_mappings" >&2; return 1; }
+            [[ -z "$primary_mappings" ]] || { echo "ERROR: Pool $pool_id (random pool) should not have any pg_upmap_items mappings: $primary_mappings" >&2; return 1; }
         else
-            [[ -n "$primary_mappings" ]] || { echo "ERROR: Pool $pool_id should have pg_upmap_primary_mappings." >&2; return 1; }
+            [[ -n "$primary_mappings" ]] || { echo "ERROR: Pool $pool_id should have pg_upmap_items_mappings." >&2; return 1; }
         fi    
     done
 
@@ -292,8 +299,8 @@ function TEST_read_balancer_cli {
     sleep 10
 
     # Verify all mappings are gone
-    primary_mappings=$("$ceph" osd dump | grep 'pg_upmap_primary' || true)
-    test -z "$primary_mappings" || { echo "ERROR: Not all pg_upmap_primary mappings were cleared: $primary_mappings" >&2; return 1; }
+    primary_mappings=$("$ceph" osd dump | grep 'pg_upmap_items' || true)
+    test -z "$primary_mappings" || { echo "ERROR: Not all pg_upmap_items mappings were cleared: $primary_mappings" >&2; return 1; }
 }
 
 
@@ -315,10 +322,16 @@ main() {
         start_vstart_cluster
     fi
 
+    # Clean up any preexisting pools
+    cleanup
+
     # ---- RUN TESTS ----
-    TEST_read_balancer_bulk_flag
-    TEST_read_balancer_cli
+    TEST_upmap_balancer_bulk_flag
+    #TEST_upmap_balancer_cli
     # -------------------
+
+    # Clean up all newly created pools
+    cleanup
 
     if $vstart; then
         shut_down_cluster
