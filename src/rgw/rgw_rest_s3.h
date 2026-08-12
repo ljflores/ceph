@@ -1025,8 +1025,10 @@ public:
 
 
 class AWSGeneralAbstractor : public AWSEngine::VersionAbstractor {
+protected:
   CephContext* const cct;
 
+private:
   virtual boost::optional<std::string>
   get_v4_canonical_headers(const req_info& info,
                            const std::string_view& signedheaders,
