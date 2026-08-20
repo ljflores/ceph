@@ -324,3 +324,8 @@ if(WITH_RADOSGW_POSIX)
   target_link_libraries(unittest_posix_bucket_cache  ${UNITTEST_LIBS}
     ${rgw_libs} ${LMDB_LIBRARIES})
 endif(WITH_RADOSGW_POSIX)
+
+# unittest_rgw_auth_sigv4
+add_executable(unittest_rgw_auth_sigv4 test_rgw_auth_sigv4.cc)
+add_ceph_unittest(unittest_rgw_auth_sigv4)
+target_link_libraries(unittest_rgw_auth_sigv4 ${rgw_libs} ${UNITTEST_LIBS})
