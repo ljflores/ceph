@@ -46,7 +46,7 @@ def get_command_output(command):
 
 try:
   import rados
-  cluster = rados.Rados(conffile='/etc/ceph/ceph.conf')
+  cluster = rados.Rados(conffile='ceph.conf')
   cluster.connect()
 except:
   use_shell = True
@@ -58,8 +58,8 @@ def eprint(*args, **kwargs):
 
 try:
   if use_shell:
-    OSDS = json.loads(get_command_output('ceph osd ls -f json | jq -r .'))
-    DF = json.loads(get_command_output('ceph osd df -f json | jq -r .nodes'))
+    OSDS = json.loads(get_command_output('./bin/ceph osd ls -f json | jq -r .'))
+    DF = json.loads(get_command_output('./bin/ceph osd df -f json | jq -r .nodes'))
   else:
     cmd = {"prefix": "osd ls", "format": "json"}
     ret, output, errs = cluster.mon_command(json.dumps(cmd), b'', timeout=5)
@@ -127,13 +127,13 @@ def gen_upmap(up, acting, replicated=False):
 
 def upmap_pg_items(pgid, mapping):
   if len(mapping):
-    print('ceph osd pg-upmap-items %s ' % pgid, end='')
+    print('./bin/ceph osd pg-upmap-items %s ' % pgid, end='')
     for pair in mapping:
       print('%s %s ' % pair, end='')
     print('&')
 
 def rm_upmap_pg_items(pgid):
-  print('ceph osd rm-pg-upmap-items %s &' % pgid)
+  print('./bin/ceph osd rm-pg-upmap-items %s &' % pgid)
 
 
 # start here
@@ -141,7 +141,7 @@ def rm_upmap_pg_items(pgid):
 # discover remapped pgs
 try:
   if use_shell:
-    remapped_json = get_command_output('ceph pg ls remapped -f json | jq -r .')
+    remapped_json = get_command_output('./bin/ceph pg ls remapped -f json | jq -r .')
   else:
     cmd = {"prefix": "pg ls", "states": ["remapped"], "format": "json"}
     ret, output, err = cluster.mon_command(json.dumps(cmd), b'', timeout=5)
@@ -158,7 +158,7 @@ except ValueError:
 # discover existing upmaps
 try:
   if use_shell:
-    osd_dump_json = get_command_output('ceph osd dump -f json | jq -r .')
+    osd_dump_json = get_command_output('./bin/ceph osd dump -f json | jq -r .')
   else:
     cmd = {"prefix": "osd dump", "format": "json"}
     ret, output, errs = cluster.mon_command(json.dumps(cmd), b'', timeout=5)
@@ -172,7 +172,7 @@ except ValueError:
 pool_type = {}
 try:
   if use_shell:
-    osd_pool_ls_detail = get_command_output('ceph osd pool ls detail')
+    osd_pool_ls_detail = get_command_output('./bin/ceph osd pool ls detail')
   else:
     cmd = {"prefix": "osd pool ls", "detail": "detail", "format": "plain"}
     ret, output, errs = cluster.mon_command(json.dumps(cmd), b'', timeout=5)
@@ -192,11 +192,11 @@ for pg in upmaps:
   has_upmap[pgid] = True
 
 # handle each remapped pg
-print(r'while ceph status | grep -q "peering\|activating\|laggy"; do sleep 2; done')
+print(r'while ./bin/ceph status | grep -q "peering\|activating\|laggy"; do sleep 2; done')
 num = 0
 for pg in remapped:
   if num == 50:
-    print(r'wait; sleep 4; while ceph status | grep -q "peering\|activating\|laggy"; do sleep 2; done')
+    print(r'wait; sleep 4; while ./bin/ceph status | grep -q "peering\|activating\|laggy"; do sleep 2; done')
     num = 0
 
   if ignore_backfilling:
@@ -232,7 +232,7 @@ for pg in remapped:
   upmap_pg_items(pgid, pairs)
   num += 1
 
-print(r'wait; sleep 4; while ceph status | grep -q "peering\|activating\|laggy"; do sleep 2; done')
+print(r'wait; sleep 4; while ./bin/ceph status | grep -q "peering\|activating\|laggy"; do sleep 2; done')
 
 if not use_shell:
   cluster.shutdown()
