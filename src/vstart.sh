@@ -214,6 +214,8 @@ io_uring_enabled=0
 with_jaeger=0
 force_addr=0
 osds_per_host=0
+num_hosts=0
+sim_hosts=()
 require_osd_and_client_version=""
 use_crush_tunables=""
 
@@ -314,6 +316,11 @@ options:
 	--crimson-balance-cpu: distribute the Seastar reactors uniformly across OSDs (osd) or NUMA (socket)
 	--crimson-poll-mode: enable poll-mode (100% cpu usage)
 	--osds-per-host: populate crush_location as each host holds the specified number of osds if set
+	--num-hosts <n>: simulate a cluster spread across n hosts (e.g. --num-hosts 3).
+	                 Daemons are distributed round-robin across hosts named <hostname>-0, <hostname>-1, ...
+	--hosts <h1,h2,...>: simulate a cluster using a specific comma-separated list of host names.
+	                     Daemons are distributed round-robin across the listed hosts.
+	                     Implies --num-hosts equal to the number of supplied names.
 	--require-osd-and-client-version: if supplied, do set-require-min-compat-client and require-osd-release to specified value
 	--use-crush-tunables: if supplied, set tunables to specified value
 	--reactor-backend: configre seastar reactor backend options like io_uring or linux-aio
@@ -720,6 +727,17 @@ case $1 in
         osds_per_host="$2"
         shift
         echo "osds_per_host $osds_per_host"
+        ;;
+    --num-hosts)
+        [ -z "$2" ] && usage_exit
+        num_hosts="$2"
+        shift
+        ;;
+    --hosts)
+        [ -z "$2" ] && usage_exit
+        IFS=',' read -r -a sim_hosts <<< "$2"
+        num_hosts="${#sim_hosts[@]}"
+        shift
         ;;
     --require-osd-and-client-version)
         require_osd_and_client_version="$2"
@@ -1151,6 +1169,24 @@ init_logrotate() {
     fi
 }
 
+# get_host_for_index <index>
+# Returns the simulated hostname for a given zero-based daemon index.
+# When --num-hosts / --hosts is active, daemons are distributed round-robin
+# across the simulated host list.  When not active it falls back to $HOSTNAME.
+get_host_for_index() {
+    local idx=$1
+    if [ "$num_hosts" -gt 0 ]; then
+        local slot=$(( idx % num_hosts ))
+        if [ "${#sim_hosts[@]}" -gt 0 ]; then
+            echo "${sim_hosts[$slot]}"
+        else
+            echo "${HOSTNAME}-${slot}"
+        fi
+    else
+        echo "$HOSTNAME"
+    fi
+}
+
 start_mon() {
     local MONS=""
     local count=0
@@ -1186,6 +1222,7 @@ start_mon() {
         local params=()
         local count=0
         local mon_host=""
+        local mon_idx=0
         for f in $MONS
         do
             if [ $msgr -eq 1 ]; then
@@ -1199,13 +1236,16 @@ start_mon() {
             fi
             params+=("--addv" "$f" "$A")
             mon_host="$mon_host $A"
+            local mon_sim_host
+            mon_sim_host=$(get_host_for_index $mon_idx)
             wconf <<EOF
 [mon.$f]
-        host = $HOSTNAME
+        host = $mon_sim_host
         mon data = $CEPH_DEV_DIR/mon.$f
         mon backup path = $CEPH_DEV_DIR/mon.$f-backup
 EOF
             count=$(($count + 2))
+            mon_idx=$(($mon_idx + 1))
         done
         wconf <<EOF
 [global]
@@ -1313,17 +1353,32 @@ start_osd() {
             $CEPH_BIN/ceph -c $conf_fn config set osd.$osd crimson_reactor_backend $crimson_reactor_backend
         fi
     fi
-	if [ "$new" -eq 1 -o $inc_osd_num -gt 0 ]; then
-            wconf <<EOF
+	       if [ "$new" -eq 1 -o $inc_osd_num -gt 0 ]; then
+	           local osd_sim_host
+	           osd_sim_host=$(get_host_for_index $osd)
+	           wconf <<EOF
 [osd.$osd]
-        host = $HOSTNAME
+	       host = $osd_sim_host
 EOF
 
-            if [ "$osds_per_host" -gt 0 ]; then
-                wconf <<EOF
-        crush location = root=default host=$HOSTNAME-$(echo "$osd / $osds_per_host" | bc)
+	           if [ "$num_hosts" -gt 0 ]; then
+	               # --num-hosts active: use the simulated host name for CRUSH.
+	               # If --osds-per-host is also set, further sub-divide within
+	               # each simulated host using a numeric suffix.
+	               if [ "$osds_per_host" -gt 0 ]; then
+	                   wconf <<EOF
+	       crush location = root=default host=${osd_sim_host}-$(echo "$osd / $osds_per_host" | bc)
 EOF
-            fi
+	               else
+	                   wconf <<EOF
+	       crush location = root=default host=${osd_sim_host}
+EOF
+	               fi
+	           elif [ "$osds_per_host" -gt 0 ]; then
+	               wconf <<EOF
+	       crush location = root=default host=$HOSTNAME-$(echo "$osd / $osds_per_host" | bc)
+EOF
+	           fi
 
             if [ "$spdk_enabled" -eq 1 ]; then
                 wconf <<EOF
@@ -1433,6 +1488,7 @@ start_mgr() {
     # avoid monitors on nearby ports (which test/*.sh use extensively)
     MGR_PORT=$(($CEPH_PORT + 1000))
     PROMETHEUS_PORT=9283
+    local mgr_idx=0
     for name in x y z a b c d e f g h i j k l m n o p
     do
         [ $mgr -eq $CEPH_NUM_MGR ] && break
@@ -1443,9 +1499,11 @@ start_mgr() {
             $SUDO $CEPH_BIN/ceph-authtool --create-keyring --gen-key --name=mgr.$name $key_fn
             ceph_adm -i $key_fn auth add mgr.$name mon 'allow profile mgr' mds 'allow *' osd 'allow *'
 
+            local mgr_sim_host
+            mgr_sim_host=$(get_host_for_index $mgr_idx)
             wconf <<EOF
 [mgr.$name]
-        host = $HOSTNAME
+        host = $mgr_sim_host
 EOF
 
             if $with_mgr_dashboard ; then
@@ -1470,6 +1528,7 @@ EOF
 
         debug echo "Starting mgr.${name}"
         run 'mgr' $name $CEPH_BIN/ceph-mgr -i $name $ARGS
+        mgr_idx=$(($mgr_idx + 1))
     done
 
     while ! ceph_adm mgr stat | jq -e '.available'; do
@@ -1537,6 +1596,7 @@ create_fs_volume() {
 
 start_mds() {
     local mds=0
+    local mds_idx=0
     for name in a b c d e f g h i j k l m n o p
     do
         [ $mds -eq $CEPH_NUM_MDS ] && break
@@ -1545,9 +1605,11 @@ start_mds() {
         if [ "$new" -eq 1 ]; then
             prun mkdir -p "$CEPH_DEV_DIR/mds.$name"
             key_fn=$CEPH_DEV_DIR/mds.$name/keyring
+            local mds_sim_host
+            mds_sim_host=$(get_host_for_index $mds_idx)
             wconf <<EOF
 [mds.$name]
-        host = $HOSTNAME
+        host = $mds_sim_host
 EOF
             if [ "$standby" -eq 1 ]; then
                 mkdir -p $CEPH_DEV_DIR/mds.${name}s
@@ -1576,6 +1638,7 @@ EOF
         #valgrind --tool=massif $CEPH_BIN/ceph-mds $ARGS --mds_log_max_segments 2 --mds_thrash_fragments 0 --mds_thrash_exports 0 > m  #--debug_ms 20
         #$CEPH_BIN/ceph-mds -d $ARGS --mds_thrash_fragments 0 --mds_thrash_exports 0 #--debug_ms 20
         #ceph_adm mds set max_mds 2
+        mds_idx=$(($mds_idx + 1))
     done
 
     if [ $new -eq 1 ]; then
@@ -1615,6 +1678,7 @@ start_ganesha() {
     cluster_id="vstart"
     GANESHA_PORT=$(($CEPH_PORT + 4000))
     local ganesha=0
+    local ganesha_idx=0
     test_user="$cluster_id"
     pool_name=".nfs"
     namespace=$cluster_id
@@ -1638,6 +1702,8 @@ start_ganesha() {
 
         port=$(($GANESHA_PORT + ganesha))
         ganesha=$(($ganesha + 1))
+        local ganesha_sim_host
+        ganesha_sim_host=$(get_host_for_index $ganesha_idx)
         ganesha_dir="$CEPH_DEV_DIR/ganesha.$name"
         prun rm -rf $ganesha_dir
         prun mkdir -p $ganesha_dir
@@ -1674,13 +1740,14 @@ start_ganesha() {
 	%url $url" > "$ganesha_dir/ganesha-$name.conf"
 	wconf <<EOF
 [ganesha.$name]
-        host = $HOSTNAME
-        ip = $IP
+	       host = $ganesha_sim_host
+	       ip = $IP
         port = $port
         ganesha data = $ganesha_dir
         pid file = $CEPH_OUT_DIR/ganesha-$name.pid
 EOF
 
+        ganesha_idx=$(($ganesha_idx + 1))
         prun env CEPH_CONF="${conf_fn}" ganesha-rados-grace --userid $test_user -p $pool_name -n $namespace add $name
         prun env CEPH_CONF="${conf_fn}" ganesha-rados-grace --userid $test_user -p $pool_name -n $namespace
 
