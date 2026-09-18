@@ -3542,3 +3542,28 @@ INSTANTIATE_TEST_SUITE_P(
     std::make_pair<int, int>(3, 0)  // chooseleaf firstn 3 osd
   )
 );
+// Reproduce crash in Tracker #70182: OSD.h get_map ceph_assert(ret) failure when map is missing
+TEST(OSDMapTest, BUG_70182_get_map_assert_fail) {
+  auto get_map = [](epoch_t e, auto try_get_map_fn) -> OSDMapRef {
+    OSDMapRef ret(try_get_map_fn(e));
+    ceph_assert(ret);
+    return ret;
+  };
+
+  auto try_get_map_missing = [](epoch_t epoch) -> OSDMapRef {
+    // Simulates OSDService::try_get_map failing to find/load the OSDMap for the given epoch
+    return OSDMapRef();
+  };
+
+  EXPECT_DEATH(get_map(167, try_get_map_missing), "ceph_assert");
+}
+
+  OSDMap,
+  OSDMapTest,
+  ::testing::Values(
+    std::make_pair<int, int>(0, 1), // chooseleaf firstn 0 host
+   std::make_pair<int, int>(3, 1), // chooseleaf firstn 3 host
+    std::make_pair<int, int>(0, 0), // chooseleaf firstn 0 osd
+    std::make_pair<int, int>(3, 0)  // chooseleaf firstn 3 osd
+  )
+);
