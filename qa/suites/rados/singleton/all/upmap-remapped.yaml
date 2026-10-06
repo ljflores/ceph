@@ -1,0 +1,48 @@
+# Integration test for src/tools/contrib/upmap-remapped.py
+#
+# Topology: 2 hosts
+#   host 0: mon.a, mon.b, mon.c, mgr.x, osd.0–osd.4  (5 OSDs)
+#   host 1: osd.5, osd.6, osd.7, client.0             (3 OSDs)
+#
+# The workunit starts with the 3 OSDs on host 1 crushed out (weight 0) so
+# the cluster behaves as a 5-OSD baseline.  It then reweights them in while
+# norebalance is set, causing CRUSH to remap PGs without moving data, and
+# verifies that upmap-remapped.py resolves all remapped PGs.
+roles:
+- - mon.a
+  - mon.b
+  - mon.c
+  - mgr.x
+  - osd.0
+  - osd.1
+  - osd.2
+  - osd.3
+  - osd.4
+- - osd.5
+  - osd.6
+  - osd.7
+  - client.0
+openstack:
+  - volumes: # attached to each instance
+      count: 5
+      size: 10 # GB
+  - volumes: # attached to each instance
+      count: 3
+      size: 10 # GB
+tasks:
+- install:
+- ceph:
+    log-ignorelist:
+      - overall HEALTH_
+      - \(OSDMAP_FLAGS\)
+      - \(OSD_
+      - \(PG_
+      - \(OBJECT_MISPLACED\)
+      - \(POOL_APP_NOT_ENABLED\)
+      - \(TOO_FEW_PGS\)
+      - \(SLOW_OPS\)
+      - slow request
+- workunit:
+    clients:
+      client.0:
+        - rados/test_upmap_remapped.sh
